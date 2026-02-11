@@ -65,15 +65,62 @@ class PlaylistRow {
   final String id;
   final String name;
   final int createdAt;
+  final bool isSpecial;
 
-  PlaylistRow({required this.id, required this.name, required this.createdAt});
+  PlaylistRow({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    this.isSpecial = false,
+  });
 
-  Map<String, Object?> toMap() =>
-      {'id': id, 'name': name, 'createdAt': createdAt};
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'name': name,
+        'createdAt': createdAt,
+        'isSpecial': isSpecial ? 1 : 0
+      };
 
   static PlaylistRow fromMap(Map<String, Object?> m) => PlaylistRow(
         id: m['id'] as String,
         name: (m['name'] as String?) ?? '',
+        createdAt: (m['createdAt'] as int?) ?? 0,
+        isSpecial: ((m['isSpecial'] as int?) ?? 0) == 1,
+      );
+}
+
+class FavoriteSegment {
+  final String id;
+  final String trackId;
+  final String name;
+  final int startMs;
+  final int endMs;
+  final int createdAt;
+
+  FavoriteSegment({
+    required this.id,
+    required this.trackId,
+    required this.name,
+    required this.startMs,
+    required this.endMs,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'trackId': trackId,
+        'name': name,
+        'startMs': startMs,
+        'endMs': endMs,
+        'createdAt': createdAt,
+      };
+
+  static FavoriteSegment fromMap(Map<String, Object?> m) => FavoriteSegment(
+        id: m['id'] as String,
+        trackId: m['trackId'] as String,
+        name: (m['name'] as String?) ?? '',
+        startMs: (m['startMs'] as int?) ?? 0,
+        endMs: (m['endMs'] as int?) ?? 0,
         createdAt: (m['createdAt'] as int?) ?? 0,
       );
 }
@@ -264,6 +311,7 @@ class AppLogic extends ChangeNotifier {
   final Set<String> favorites = {};
   final List<PlaylistRow> playlists = [];
   final Map<String, List<String>> playlistItems = {}; // playlistId -> trackIds
+  final List<FavoriteSegment> favoriteSegments = [];
 
   // Player
   late final PlayerHandler handler;
@@ -366,7 +414,7 @@ class AppLogic extends ChangeNotifier {
     final dbPath = p.join(_rootDir.path, 'app.db');
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE tracks (
@@ -391,7 +439,8 @@ class AppLogic extends ChangeNotifier {
           CREATE TABLE playlists (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            createdAt INTEGER NOT NULL
+            createdAt INTEGER NOT NULL,
+            isSpecial INTEGER DEFAULT 0
           );
         ''');
 
@@ -401,6 +450,17 @@ class AppLogic extends ChangeNotifier {
             trackId TEXT NOT NULL,
             pos INTEGER NOT NULL,
             PRIMARY KEY (playlistId, trackId)
+          );
+        ''');
+
+        await db.execute('''
+          CREATE TABLE favorite_segments (
+            id TEXT PRIMARY KEY,
+            trackId TEXT NOT NULL,
+            name TEXT NOT NULL,
+            startMs INTEGER NOT NULL,
+            endMs INTEGER NOT NULL,
+            createdAt INTEGER NOT NULL
           );
         ''');
 
@@ -425,6 +485,44 @@ class AppLogic extends ChangeNotifier {
             continuous: true,
           ).toMap(),
         );
+
+        // Create default "Phân đoạn yêu thích" playlist
+        await db.insert('playlists', {
+          'id': 'special_favorite_segments',
+          'name': 'Phân đoạn yêu thích',
+          'createdAt': DateTime.now().millisecondsSinceEpoch,
+          'isSpecial': 1,
+        });
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            ALTER TABLE playlists ADD COLUMN isSpecial INTEGER DEFAULT 0;
+          ''');
+
+          await db.execute('''
+            CREATE TABLE favorite_segments (
+              id TEXT PRIMARY KEY,
+              trackId TEXT NOT NULL,
+              name TEXT NOT NULL,
+              startMs INTEGER NOT NULL,
+              endMs INTEGER NOT NULL,
+              createdAt INTEGER NOT NULL
+            );
+          ''');
+
+          // Create default "Phân đoạn yêu thích" playlist if not exists
+          final exists = await db.query('playlists',
+              where: 'id=?', whereArgs: ['special_favorite_segments']);
+          if (exists.isEmpty) {
+            await db.insert('playlists', {
+              'id': 'special_favorite_segments',
+              'name': 'Phân đoạn yêu thích',
+              'createdAt': DateTime.now().millisecondsSinceEpoch,
+              'isSpecial': 1,
+            });
+          }
+        }
       },
     );
   }
@@ -456,6 +554,11 @@ class AppLogic extends ChangeNotifier {
       );
       playlistItems[pl.id] = items.map((m) => m['trackId'] as String).toList();
     }
+
+    favoriteSegments
+      ..clear()
+      ..addAll((await db.query('favorite_segments', orderBy: 'createdAt DESC'))
+          .map(FavoriteSegment.fromMap));
 
     notifyListeners();
   }
@@ -665,10 +768,74 @@ class AppLogic extends ChangeNotifier {
   }
 
   Future<void> deletePlaylist(String playlistId) async {
+    // Prevent deleting special playlists
+    final pl = playlists.firstWhere((p) => p.id == playlistId);
+    if (pl.isSpecial) return;
+
     await _db!.delete('playlist_items',
         where: 'playlistId=?', whereArgs: [playlistId]);
     await _db!.delete('playlists', where: 'id=?', whereArgs: [playlistId]);
     await _loadAllFromDb();
+  }
+
+  /// ===============================
+  /// Favorite Segments
+  /// ===============================
+  Future<void> addFavoriteSegment({
+    required String trackId,
+    required String name,
+    required int startMs,
+    required int endMs,
+  }) async {
+    final id = _uuid();
+    final segment = FavoriteSegment(
+      id: id,
+      trackId: trackId,
+      name: name,
+      startMs: startMs,
+      endMs: endMs,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    await _db!.insert('favorite_segments', segment.toMap());
+    await _loadAllFromDb();
+  }
+
+  Future<void> deleteFavoriteSegment(String segmentId) async {
+    await _db!
+        .delete('favorite_segments', where: 'id=?', whereArgs: [segmentId]);
+    await _loadAllFromDb();
+  }
+
+  List<FavoriteSegment> getSegmentsForTrack(String trackId) {
+    return favoriteSegments.where((s) => s.trackId == trackId).toList();
+  }
+
+  Future<void> playSegment(FavoriteSegment segment,
+      {bool autoPlay = true}) async {
+    final track = library.firstWhere((t) => t.id == segment.trackId);
+    final idx = library.indexWhere((t) => t.id == segment.trackId);
+    if (idx < 0) return;
+
+    _current = track;
+    final startPos = Duration(milliseconds: segment.startMs);
+
+    final items = library.map(_toMediaItem).toList();
+    await handler.setQueueFromTracks(items,
+        startIndex: idx, startPos: startPos);
+    await handler.setLoopOne(false);
+
+    if (autoPlay) {
+      await handler.play();
+    }
+
+    await _savePlaybackNow(
+      isPlaying: autoPlay,
+      currentTrackId: track.id,
+      positionMs: segment.startMs,
+    );
+
+    notifyListeners();
   }
 
   Future<void> addToPlaylist(String playlistId, String trackId) async {
