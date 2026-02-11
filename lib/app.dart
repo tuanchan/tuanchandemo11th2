@@ -34,7 +34,7 @@ class _AppRootState extends State<AppRoot> {
   void _rebuild() => setState(() {});
 
   static const _orange = Color(0xFFFF4A00);
-  static const _bg = Color(0xFF000000); // Changed to pure black
+  static const _bg = Color(0xFF000000);
 
   ThemeData _theme(bool dark) {
     final base = dark ? ThemeData.dark() : ThemeData.light();
@@ -155,26 +155,76 @@ class _Shell extends StatelessWidget {
 }
 
 /// ===============================
-/// HOME (library)
+/// HOME (library) - THÊM SEARCH BAR
 /// ===============================
-class _HomePage extends StatelessWidget {
+class _HomePage extends StatefulWidget {
   final AppLogic logic;
   const _HomePage({required this.logic});
 
   @override
+  State<_HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<_HomePage> {
+  String _searchQuery = '';
+
+  @override
   Widget build(BuildContext context) {
-    final items = logic.library;
-    final currentId = logic.currentTrack?.id;
+    final items = widget.logic.library;
+    final currentId = widget.logic.currentTrack?.id;
+
+    // Lọc theo search query
+    final filteredItems = _searchQuery.isEmpty
+        ? items
+        : items
+            .where((t) =>
+                t.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                t.artist.toLowerCase().contains(_searchQuery.toLowerCase()))
+            .toList();
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        _HeroCard(logic: logic),
+        _HeroCard(logic: widget.logic),
         const SizedBox(height: 14),
+
+        // SEARCH BAR
+        TextField(
+          decoration: InputDecoration(
+            hintText: 'Tìm kiếm bài hát, nghệ sĩ...',
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear_rounded),
+                    onPressed: () {
+                      setState(() {
+                        _searchQuery = '';
+                      });
+                    },
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            filled: true,
+            fillColor: Theme.of(context).cardColor,
+          ),
+          onChanged: (value) {
+            setState(() {
+              _searchQuery = value;
+            });
+          },
+        ),
+        const SizedBox(height: 14),
+
         Row(
           children: [
             Expanded(
                 child: Text('Thư viện',
                     style: Theme.of(context).textTheme.titleLarge)),
+            if (_searchQuery.isNotEmpty)
+              Text('${filteredItems.length} kết quả',
+                  style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
         const SizedBox(height: 8),
@@ -183,9 +233,23 @@ class _HomePage extends StatelessWidget {
             padding: EdgeInsets.only(top: 24),
             child: Text('Chưa có file. Bấm nút + để thêm mp3/m4a vào app.'),
           ),
-        ...items.map((t) {
+        if (items.isNotEmpty && filteredItems.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 24),
+            child: Center(
+              child: Column(
+                children: [
+                  const Icon(Icons.search_off_rounded, size: 48),
+                  const SizedBox(height: 8),
+                  Text('Không tìm thấy "$_searchQuery"',
+                      style: Theme.of(context).textTheme.bodyLarge),
+                ],
+              ),
+            ),
+          ),
+        ...filteredItems.map((t) {
           final isCurrent = (currentId == t.id);
-          final fav = logic.favorites.contains(t.id);
+          final fav = widget.logic.favorites.contains(t.id);
 
           return Slidable(
             key: ValueKey(t.id),
@@ -193,7 +257,8 @@ class _HomePage extends StatelessWidget {
               motion: const DrawerMotion(),
               children: [
                 SlidableAction(
-                  onPressed: (_) async => await logic.removeTrackFromApp(t.id),
+                  onPressed: (_) async =>
+                      await widget.logic.removeTrackFromApp(t.id),
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                   icon: Icons.delete_rounded,
@@ -204,8 +269,8 @@ class _HomePage extends StatelessWidget {
             child: Card(
               child: ListTile(
                 onTap: () async {
-                  await logic.setCurrent(t.id, autoPlay: true);
-                  _openNowPlaying(context, logic);
+                  await widget.logic.setCurrent(t.id, autoPlay: true);
+                  _openNowPlaying(context, widget.logic);
                 },
                 leading: _CoverThumb(path: t.coverPath, title: t.title),
                 title:
@@ -218,12 +283,12 @@ class _HomePage extends StatelessWidget {
                     if (isCurrent) const Icon(Icons.equalizer_rounded),
                     IconButton(
                       tooltip: fav ? 'Bỏ thích' : 'Thích',
-                      onPressed: () => logic.toggleFavorite(t.id),
+                      onPressed: () => widget.logic.toggleFavorite(t.id),
                       icon: Icon(fav
                           ? Icons.favorite_rounded
                           : Icons.favorite_border_rounded),
                     ),
-                    _TrackMenu(logic: logic, track: t),
+                    _TrackMenu(logic: widget.logic, track: t),
                   ],
                 ),
               ),
@@ -901,7 +966,7 @@ class _SettingsPageState extends State<_SettingsPage> {
 }
 
 /// ===============================
-/// NOW PLAYING (with trim-based segment creation)
+/// NOW PLAYING - SỬA LẠI LAYOUT ĐỂ SCROLL ĐƯỢC
 /// ===============================
 class _NowPlayingSheet extends StatefulWidget {
   final AppLogic logic;
@@ -935,164 +1000,181 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
         track == null ? <PlaylistRow>[] : logic.playlistsContaining(track.id);
 
     return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-            16, 12, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.9,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            _handleBar(),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                    child: Text('Đang phát',
-                        style: Theme.of(context).textTheme.titleLarge)),
-                IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _BigCover(path: track?.coverPath, title: title),
-            const SizedBox(height: 12),
-            Text(title,
-                style: Theme.of(context).textTheme.titleMedium,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 4),
-            Text(artist,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Colors.white70),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 12),
-
-            /// Smooth seek bar
-            _buildSeekBar(duration),
-
-            const SizedBox(height: 8),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  tooltip: 'Loop one',
-                  onPressed: () async => await logic.toggleLoopOne(),
-                  icon: Icon(Icons.repeat_one_rounded,
-                      color: logic.loopOne
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.white70),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Previous',
-                  onPressed: () async => await logic.previous(),
-                  iconSize: 34,
-                  icon: const Icon(Icons.skip_previous_rounded),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 22, vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999)),
+            // Header - Fixed
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Column(
+                children: [
+                  _handleBar(),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                          child: Text('Đang phát',
+                              style: Theme.of(context).textTheme.titleLarge)),
+                      IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close_rounded)),
+                    ],
                   ),
-                  onPressed: () async => await logic.playPause(),
-                  child: Icon(
-                      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                      size: 28),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Next',
-                  onPressed: () async => await logic.next(),
-                  iconSize: 34,
-                  icon: const Icon(Icons.skip_next_rounded),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Continuous play',
-                  onPressed: () async => await logic.toggleContinuous(),
-                  icon: Icon(Icons.all_inclusive_rounded,
-                      color: logic.continuousPlay
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.white70),
-                ),
-              ],
+                ],
+              ),
             ),
 
-            if (pls.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: FilledButton.tonalIcon(
-                  icon: const Icon(Icons.playlist_play_rounded),
-                  label: const Text('Phát danh sách'),
-                  onPressed: () async {
-                    if (track == null) return;
+            // Scrollable content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  children: [
+                    _BigCover(path: track?.coverPath, title: title),
+                    const SizedBox(height: 12),
+                    Text(title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Text(artist,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: Colors.white70),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 12),
 
-                    if (pls.length == 1) {
-                      await logic.playPlaylist(
-                        pls.first.id,
-                        startTrackId: track.id,
-                        autoPlay: true,
-                      );
-                      return;
-                    }
+                    /// Smooth seek bar
+                    _buildSeekBar(duration),
 
-                    final chosen = await showDialog<String>(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('Chọn playlist'),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: pls
-                              .map((pl) => ListTile(
-                                    title: Text(pl.name),
-                                    onTap: () => Navigator.pop(context, pl.id),
-                                  ))
-                              .toList(),
+                    const SizedBox(height: 16),
+
+                    // Nút điều khiển chính - Thu gọn
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          tooltip: 'Previous',
+                          onPressed: () async => await logic.previous(),
+                          iconSize: 32,
+                          icon: const Icon(Icons.skip_previous_rounded),
                         ),
-                      ),
-                    );
+                        const SizedBox(width: 12),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.all(16),
+                            shape: const CircleBorder(),
+                          ),
+                          onPressed: () async => await logic.playPause(),
+                          child: Icon(
+                              playing
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 32),
+                        ),
+                        const SizedBox(width: 12),
+                        IconButton(
+                          tooltip: 'Next',
+                          onPressed: () async => await logic.next(),
+                          iconSize: 32,
+                          icon: const Icon(Icons.skip_next_rounded),
+                        ),
+                      ],
+                    ),
 
-                    if (chosen != null) {
-                      await logic.playPlaylist(
-                        chosen,
-                        startTrackId: track.id,
-                        autoPlay: true,
-                      );
-                    }
-                  },
+                    const SizedBox(height: 12),
+
+                    // Các chức năng phụ - Thu gọn thành 1 hàng
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          tooltip: fav ? 'Bỏ thích' : 'Thích',
+                          onPressed: track == null
+                              ? null
+                              : () => logic.toggleFavorite(track.id),
+                          icon: Icon(fav
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded),
+                          color: fav
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.white70,
+                        ),
+                        IconButton(
+                          tooltip: 'Loop one',
+                          onPressed: () async => await logic.toggleLoopOne(),
+                          icon: Icon(Icons.repeat_one_rounded,
+                              color: logic.loopOne
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.white70),
+                        ),
+                        IconButton(
+                          tooltip: 'Continuous play',
+                          onPressed: () async => await logic.toggleContinuous(),
+                          icon: Icon(Icons.all_inclusive_rounded,
+                              color: logic.continuousPlay
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.white70),
+                        ),
+                      ],
+                    ),
+
+                    if (pls.isNotEmpty) const SizedBox(height: 8),
+
+                    if (pls.isNotEmpty)
+                      FilledButton.tonalIcon(
+                        icon: const Icon(Icons.playlist_play_rounded, size: 18),
+                        label: const Text('Phát danh sách'),
+                        onPressed: () async {
+                          if (track == null) return;
+
+                          if (pls.length == 1) {
+                            await logic.playPlaylist(
+                              pls.first.id,
+                              startTrackId: track.id,
+                              autoPlay: true,
+                            );
+                            return;
+                          }
+
+                          final chosen = await showDialog<String>(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text('Chọn playlist'),
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: pls
+                                    .map((pl) => ListTile(
+                                          title: Text(pl.name),
+                                          onTap: () =>
+                                              Navigator.pop(context, pl.id),
+                                        ))
+                                    .toList(),
+                              ),
+                            ),
+                          );
+
+                          if (chosen != null) {
+                            await logic.playPlaylist(
+                              chosen,
+                              startTrackId: track.id,
+                              autoPlay: true,
+                            );
+                          }
+                        },
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // TRIM-BASED SEGMENT CREATION
+                    if (track != null)
+                      _buildTrimControls(context, track, logic),
+                  ],
                 ),
               ),
-
-            const SizedBox(height: 10),
-
-            // TRIM-BASED SEGMENT CREATION
-            if (track != null) _buildTrimControls(context, track, logic),
-
-            const SizedBox(height: 10),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  tooltip: fav ? 'Bỏ thích' : 'Thích',
-                  onPressed: track == null
-                      ? null
-                      : () => logic.toggleFavorite(track.id),
-                  icon: Icon(fav
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded),
-                  color: fav
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.white70,
-                ),
-              ],
             ),
           ],
         ),
@@ -1136,7 +1218,10 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                       children: [
                         const Icon(Icons.start_rounded, size: 18),
                         const SizedBox(height: 4),
-                        Text(hasStart ? _fmtMs(_trimStartMs!) : 'Đánh dấu đầu'),
+                        Text(
+                          hasStart ? _fmtMs(_trimStartMs!) : 'Đánh dấu đầu',
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ],
                     ),
                   ),
@@ -1154,7 +1239,10 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                       children: [
                         const Icon(Icons.stop_rounded, size: 18),
                         const SizedBox(height: 4),
-                        Text(hasEnd ? _fmtMs(_trimEndMs!) : 'Đánh dấu cuối'),
+                        Text(
+                          hasEnd ? _fmtMs(_trimEndMs!) : 'Đánh dấu cuối',
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ],
                     ),
                   ),
@@ -1174,7 +1262,7 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                       });
                     },
                     icon: const Icon(Icons.clear_rounded, size: 16),
-                    label: const Text('Xoá đánh dấu'),
+                    label: const Text('Xoá'),
                   ),
                   const SizedBox(width: 8),
                   FilledButton.icon(
@@ -1182,7 +1270,7 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                         ? () => _saveSegment(context, track, logic)
                         : null,
                     icon: const Icon(Icons.save_rounded, size: 16),
-                    label: const Text('Lưu phân đoạn'),
+                    label: const Text('Lưu'),
                   ),
                 ],
               ),
