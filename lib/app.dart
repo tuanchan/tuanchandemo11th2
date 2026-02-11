@@ -657,6 +657,7 @@ class _PlaylistSheet extends StatelessWidget {
             Flexible(
               child: ListView.builder(
                 shrinkWrap: true,
+                padding: const EdgeInsets.only(top: 40),
                 itemCount: tracks.length,
                 itemBuilder: (_, i) {
                   final t = tracks[i];
