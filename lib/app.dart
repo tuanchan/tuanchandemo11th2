@@ -468,26 +468,37 @@ class _PlaylistsPage extends StatelessWidget {
               child: Text('Chưa có playlist.')),
         ...pls.map((pl) {
           final ids = logic.playlistItems[pl.id] ?? const <String>[];
+          final segmentCount =
+              pl.isSpecial ? logic.favoriteSegments.length : ids.length;
+
           return Slidable(
             key: ValueKey(pl.id),
-            endActionPane: ActionPane(
-              motion: const DrawerMotion(),
-              children: [
-                SlidableAction(
-                  onPressed: (_) async => await logic.deletePlaylist(pl.id),
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  icon: Icons.delete_rounded,
-                  label: 'Xoá',
-                ),
-              ],
-            ),
+            endActionPane: pl.isSpecial
+                ? null
+                : ActionPane(
+                    motion: const DrawerMotion(),
+                    children: [
+                      SlidableAction(
+                        onPressed: (_) async =>
+                            await logic.deletePlaylist(pl.id),
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        icon: Icons.delete_rounded,
+                        label: 'Xoá',
+                      ),
+                    ],
+                  ),
             child: Card(
               child: ListTile(
-                leading: const Icon(Icons.playlist_play_rounded),
+                leading: Icon(pl.isSpecial
+                    ? Icons.star_rounded
+                    : Icons.playlist_play_rounded),
                 title: Text(pl.name),
-                subtitle: Text('${ids.length} bài'),
-                onTap: () => _openPlaylist(context, pl.id, pl.name),
+                subtitle: Text(pl.isSpecial
+                    ? '$segmentCount phân đoạn'
+                    : '$segmentCount bài'),
+                onTap: () =>
+                    _openPlaylist(context, pl.id, pl.name, pl.isSpecial),
               ),
             ),
           );
@@ -515,15 +526,17 @@ class _PlaylistsPage extends StatelessWidget {
     );
   }
 
-  void _openPlaylist(BuildContext context, String playlistId, String name) {
+  void _openPlaylist(
+      BuildContext context, String playlistId, String name, bool isSpecial) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).cardTheme.color,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) =>
-          _PlaylistSheet(logic: logic, playlistId: playlistId, name: name),
+      builder: (_) => isSpecial
+          ? _FavoriteSegmentsSheet(logic: logic)
+          : _PlaylistSheet(logic: logic, playlistId: playlistId, name: name),
     );
   }
 }
@@ -637,6 +650,114 @@ class _PlaylistSheet extends StatelessWidget {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => _NowPlayingSheet(logic: logic),
     );
+  }
+}
+
+/// ===============================
+/// FAVORITE SEGMENTS SHEET
+/// ===============================
+class _FavoriteSegmentsSheet extends StatelessWidget {
+  final AppLogic logic;
+
+  const _FavoriteSegmentsSheet({required this.logic});
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = logic.favoriteSegments;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.star_rounded),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text('Phân đoạn yêu thích',
+                        style: Theme.of(context).textTheme.titleLarge)),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (segments.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 24),
+                child: Text(
+                    'Chưa có phân đoạn yêu thích.\nMở file nhạc và tạo phân đoạn từ nút "Now Playing".'),
+              ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: segments.length,
+                itemBuilder: (_, i) {
+                  final seg = segments[i];
+                  final track = logic.library.firstWhere(
+                    (t) => t.id == seg.trackId,
+                    orElse: () => TrackRow(
+                      id: '',
+                      title: 'Unknown',
+                      artist: '',
+                      localPath: '',
+                      signature: '',
+                      coverPath: null,
+                      durationMs: 0,
+                      createdAt: 0,
+                    ),
+                  );
+
+                  return Slidable(
+                    key: ValueKey('seg_${seg.id}'),
+                    endActionPane: ActionPane(
+                      motion: const DrawerMotion(),
+                      children: [
+                        SlidableAction(
+                          onPressed: (_) async =>
+                              await logic.deleteFavoriteSegment(seg.id),
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          icon: Icons.delete_rounded,
+                          label: 'Xoá',
+                        ),
+                      ],
+                    ),
+                    child: Card(
+                      child: ListTile(
+                        leading: _CoverThumb(
+                            path: track.coverPath, title: track.title),
+                        title: Text(seg.name,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          '${track.title} • ${_fmtMs(seg.startMs)} - ${_fmtMs(seg.endMs)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () async {
+                          await logic.playSegment(seg, autoPlay: true);
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmtMs(int ms) {
+    final d = Duration(milliseconds: ms);
+    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$mm:$ss';
   }
 }
 
@@ -947,6 +1068,17 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
 
             const SizedBox(height: 10),
 
+            // Add Favorite Segment Button
+            if (track != null)
+              FilledButton.tonalIcon(
+                icon: const Icon(Icons.cut_rounded),
+                label: const Text('Tạo phân đoạn yêu thích'),
+                onPressed: () =>
+                    _showCreateSegmentDialog(context, track, logic),
+              ),
+
+            const SizedBox(height: 10),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -1050,6 +1182,106 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
     final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$mm:$ss';
+  }
+
+  void _showCreateSegmentDialog(
+      BuildContext context, TrackRow track, AppLogic logic) {
+    final currentPos = logic.position.inMilliseconds;
+    final duration = logic.currentDuration.inMilliseconds;
+
+    final startCtrl = TextEditingController();
+    final endCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Tạo phân đoạn yêu thích'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Tên phân đoạn',
+                hintText: 'VD: Solo hay nhất',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: startCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Bắt đầu (giây)',
+                      hintText: '0',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: endCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Kết thúc (giây)',
+                      hintText: '30',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            FilledButton.tonal(
+              onPressed: () {
+                startCtrl.text = (currentPos / 1000).round().toString();
+              },
+              child: const Text('Dùng vị trí hiện tại làm điểm bắt đầu'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Huỷ'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+
+              final startSec = int.tryParse(startCtrl.text) ?? 0;
+              final endSec = int.tryParse(endCtrl.text) ?? (duration ~/ 1000);
+
+              final startMs = startSec * 1000;
+              final endMs = endSec * 1000;
+
+              if (startMs >= endMs || endMs > duration) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Thời gian không hợp lệ')),
+                );
+                return;
+              }
+
+              await logic.addFavoriteSegment(
+                trackId: track.id,
+                name: name,
+                startMs: startMs,
+                endMs: endMs,
+              );
+
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Đã tạo phân đoạn yêu thích')),
+              );
+            },
+            child: const Text('Tạo'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
