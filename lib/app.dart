@@ -1,7 +1,11 @@
 // app.dart
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
+
 import 'logic.dart';
 
 class AppRoot extends StatefulWidget {
@@ -18,16 +22,16 @@ class _AppRootState extends State<AppRoot> {
   @override
   void initState() {
     super.initState();
-    widget.logic.addListener(_onLogicChanged);
+    widget.logic.addListener(_rebuild);
   }
 
   @override
   void dispose() {
-    widget.logic.removeListener(_onLogicChanged);
+    widget.logic.removeListener(_rebuild);
     super.dispose();
   }
 
-  void _onLogicChanged() => setState(() {});
+  void _rebuild() => setState(() {});
 
   static const _orange = Color(0xFFFF4A00);
   static const _bg = Color(0xFF121212);
@@ -36,10 +40,8 @@ class _AppRootState extends State<AppRoot> {
     final base = dark ? ThemeData.dark() : ThemeData.light();
     return base.copyWith(
       scaffoldBackgroundColor: dark ? _bg : Colors.white,
-      colorScheme: base.colorScheme.copyWith(
-        primary: _orange,
-        secondary: _orange,
-      ),
+      colorScheme:
+          base.colorScheme.copyWith(primary: _orange, secondary: _orange),
       appBarTheme: AppBarTheme(
         backgroundColor: dark ? _bg : Colors.white,
         foregroundColor: dark ? Colors.white : Colors.black,
@@ -57,12 +59,13 @@ class _AppRootState extends State<AppRoot> {
         overlayColor: _orange.withOpacity(0.12),
         inactiveTrackColor: dark ? Colors.white24 : Colors.black26,
       ),
-
-      /// FIX 1: CardThemeData (không dùng CardTheme)
       cardTheme: CardThemeData(
         color: dark ? const Color(0xFF1A1A1A) : const Color(0xFFF6F6F6),
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
     );
   }
@@ -106,8 +109,8 @@ class _Shell extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Now Playing',
-            onPressed: () => _openNowPlaying(context, logic),
-            icon: const Icon(Icons.queue_music),
+            onPressed: () => _openNowPlaying(context),
+            icon: const Icon(Icons.queue_music_rounded),
           ),
         ],
       ),
@@ -129,14 +132,16 @@ class _Shell extends StatelessWidget {
       floatingActionButton: (tab == 0)
           ? FloatingActionButton(
               backgroundColor: Theme.of(context).colorScheme.primary,
-              onPressed: () => _openNowPlaying(context, logic),
-              child: const Icon(Icons.play_arrow_rounded),
+              onPressed: () async {
+                await logic.importAudioFiles();
+              },
+              child: const Icon(Icons.add_rounded),
             )
           : null,
     );
   }
 
-  void _openNowPlaying(BuildContext context, AppLogic logic) {
+  void _openNowPlaying(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -149,46 +154,83 @@ class _Shell extends StatelessWidget {
   }
 }
 
+/// ===============================
+/// HOME (library)
+/// ===============================
 class _HomePage extends StatelessWidget {
   final AppLogic logic;
   const _HomePage({required this.logic});
 
   @override
   Widget build(BuildContext context) {
-    final t = logic.currentTrack;
+    final items = logic.library;
+    final currentId = logic.currentTrack?.id;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        _HeroPlayerCard(logic: logic),
-        const SizedBox(height: 16),
-        Text('Thư viện', style: Theme.of(context).textTheme.titleLarge),
+        _HeroCard(logic: logic),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+                child: Text('Thư viện',
+                    style: Theme.of(context).textTheme.titleLarge)),
+            FilledButton.tonalIcon(
+              onPressed: () => logic.importAudioFiles(),
+              icon: const Icon(Icons.file_upload_rounded),
+              label: const Text('Import'),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
-        ...logic.library.map((track) {
-          final isCurrent = t?.id == track.id;
-          final fav = logic.favorites.contains(track.id);
-          return Card(
-            child: ListTile(
-              onTap: () {
-                logic.setCurrent(track.id);
-                _openNowPlaying(context, logic);
-              },
-              leading: _CoverThumb(title: track.title),
-              title: Text(track.title,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text(track.artist,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isCurrent) const Icon(Icons.equalizer_rounded),
-                  IconButton(
-                    tooltip: fav ? 'Bỏ thích' : 'Thích',
-                    onPressed: () => logic.toggleFavorite(track.id),
-                    icon: Icon(fav
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded),
-                  ),
-                ],
+        if (items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 24),
+            child: Text('Chưa có file. Bấm Import để thêm mp3/m4a vào app.'),
+          ),
+        ...items.map((t) {
+          final isCurrent = (currentId == t.id);
+          final fav = logic.favorites.contains(t.id);
+
+          return Slidable(
+            key: ValueKey(t.id),
+            endActionPane: ActionPane(
+              motion: const DrawerMotion(),
+              children: [
+                SlidableAction(
+                  onPressed: (_) async => await logic.removeTrackFromApp(t.id),
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  icon: Icons.delete_rounded,
+                  label: 'Xoá',
+                ),
+              ],
+            ),
+            child: Card(
+              child: ListTile(
+                onTap: () async {
+                  await logic.setCurrent(t.id, autoPlay: true);
+                  _openNowPlaying(context, logic);
+                },
+                leading: _CoverThumb(path: t.coverPath, title: t.title),
+                title:
+                    Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(t.artist,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isCurrent) const Icon(Icons.equalizer_rounded),
+                    IconButton(
+                      tooltip: fav ? 'Bỏ thích' : 'Thích',
+                      onPressed: () => logic.toggleFavorite(t.id),
+                      icon: Icon(fav
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded),
+                    ),
+                    _TrackMenu(logic: logic, track: t),
+                  ],
+                ),
               ),
             ),
           );
@@ -210,17 +252,131 @@ class _HomePage extends StatelessWidget {
   }
 }
 
+/// 3 dots menu per file
+class _TrackMenu extends StatelessWidget {
+  final AppLogic logic;
+  final TrackRow track;
+
+  const _TrackMenu({required this.logic, required this.track});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'Menu',
+      onSelected: (v) async {
+        if (v == 'cover') {
+          await logic.setTrackCover(track.id);
+        } else if (v == 'rename') {
+          final name =
+              await _promptText(context, 'Sửa tên', initial: track.title);
+          if (name != null) await logic.renameTrack(track.id, name);
+        } else if (v == 'delete') {
+          await logic.removeTrackFromApp(track.id);
+        } else if (v.startsWith('addpl:')) {
+          final pid = v.substring('addpl:'.length);
+          await logic.addToPlaylist(pid, track.id);
+        }
+      },
+      itemBuilder: (_) {
+        final pls = logic.playlists;
+        return [
+          const PopupMenuItem(value: 'cover', child: Text('Thêm ảnh')),
+          const PopupMenuItem(value: 'rename', child: Text('Sửa tên')),
+          const PopupMenuDivider(),
+          ...pls.map((pl) => PopupMenuItem(
+              value: 'addpl:${pl.id}', child: Text('Thêm vào: ${pl.name}'))),
+          if (pls.isNotEmpty) const PopupMenuDivider(),
+          const PopupMenuItem(
+              value: 'delete',
+              child: Text('Xoá khỏi app (không xoá file gốc)')),
+        ];
+      },
+      icon: const Icon(Icons.more_vert_rounded),
+    );
+  }
+
+  Future<String?> _promptText(BuildContext context, String title,
+      {String initial = ''}) async {
+    final ctrl = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: TextField(controller: ctrl, autofocus: true),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Huỷ')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text),
+              child: const Text('Lưu')),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroCard extends StatelessWidget {
+  final AppLogic logic;
+  const _HeroCard({required this.logic});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = logic.currentTrack;
+    final title = t?.title ?? 'Chưa chọn bài';
+    final artist = t?.artist ?? '';
+    final playing = logic.handler.playbackState.value.playing;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            _CoverThumb(path: t?.coverPath, title: title, size: 54),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.white70)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            IconButton(
+              onPressed: () async => await logic.playPause(),
+              icon: Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ===============================
+/// FAVORITES
+/// ===============================
 class _FavoritesPage extends StatelessWidget {
   final AppLogic logic;
   const _FavoritesPage({required this.logic});
 
   @override
   Widget build(BuildContext context) {
-    final favIds = logic.favorites.toList();
-    final favTracks = favIds
-        .map((id) => logic.library
-            .firstWhere((t) => t.id == id, orElse: () => logic.library.first))
-        .toList();
+    final favTracks =
+        logic.library.where((t) => logic.favorites.contains(t.id)).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -229,20 +385,35 @@ class _FavoritesPage extends StatelessWidget {
         const SizedBox(height: 8),
         if (favTracks.isEmpty)
           const Padding(
-            padding: EdgeInsets.only(top: 24),
-            child: Text('Chưa có bài nào trong danh sách yêu thích.'),
-          ),
-        ...favTracks.map((track) => Card(
-              child: ListTile(
-                leading: _CoverThumb(title: track.title),
-                title: Text(track.title,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(track.artist,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                onTap: () {
-                  logic.setCurrent(track.id);
-                  _openNowPlaying(context, logic);
-                },
+              padding: EdgeInsets.only(top: 24),
+              child: Text('Chưa có bài yêu thích.')),
+        ...favTracks.map((t) => Slidable(
+              key: ValueKey('fav_${t.id}'),
+              endActionPane: ActionPane(
+                motion: const DrawerMotion(),
+                children: [
+                  SlidableAction(
+                    onPressed: (_) async =>
+                        await logic.removeTrackFromApp(t.id),
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    icon: Icons.delete_rounded,
+                    label: 'Xoá',
+                  ),
+                ],
+              ),
+              child: Card(
+                child: ListTile(
+                  leading: _CoverThumb(path: t.coverPath, title: t.title),
+                  title: Text(t.title,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(t.artist,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: () async {
+                    await logic.setCurrent(t.id, autoPlay: true);
+                    _openNowPlaying(context, logic);
+                  },
+                ),
               ),
             )),
       ],
@@ -255,33 +426,68 @@ class _FavoritesPage extends StatelessWidget {
       isScrollControlled: true,
       backgroundColor: Theme.of(context).cardTheme.color,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => _NowPlayingSheet(logic: logic),
     );
   }
 }
 
+/// ===============================
+/// PLAYLISTS
+/// ===============================
 class _PlaylistsPage extends StatelessWidget {
   final AppLogic logic;
   const _PlaylistsPage({required this.logic});
 
   @override
   Widget build(BuildContext context) {
-    final names = logic.playlists.keys.toList();
+    final pls = logic.playlists;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        Text('Danh sách phát', style: Theme.of(context).textTheme.titleLarge),
+        Row(
+          children: [
+            Expanded(
+                child: Text('Danh sách phát',
+                    style: Theme.of(context).textTheme.titleLarge)),
+            FilledButton.tonalIcon(
+              onPressed: () async {
+                final name = await _promptText(context, 'Tạo playlist');
+                if (name != null) await logic.createPlaylist(name);
+              },
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Tạo'),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
-        ...names.map((name) {
-          final ids = logic.playlists[name] ?? const <String>[];
-          return Card(
-            child: ListTile(
-              leading: const Icon(Icons.playlist_play_rounded),
-              title: Text(name),
-              subtitle: Text('${ids.length} bài'),
-              onTap: () => _openPlaylist(context, name, ids),
+        if (pls.isEmpty)
+          const Padding(
+              padding: EdgeInsets.only(top: 24),
+              child: Text('Chưa có playlist.')),
+        ...pls.map((pl) {
+          final ids = logic.playlistItems[pl.id] ?? const <String>[];
+          return Slidable(
+            key: ValueKey(pl.id),
+            endActionPane: ActionPane(
+              motion: const DrawerMotion(),
+              children: [
+                SlidableAction(
+                  onPressed: (_) async => await logic.deletePlaylist(pl.id),
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  icon: Icons.delete_rounded,
+                  label: 'Xoá',
+                ),
+              ],
+            ),
+            child: Card(
+              child: ListTile(
+                leading: const Icon(Icons.playlist_play_rounded),
+                title: Text(pl.name),
+                subtitle: Text('${ids.length} bài'),
+                onTap: () => _openPlaylist(context, pl.id, pl.name),
+              ),
             ),
           );
         }),
@@ -289,82 +495,129 @@ class _PlaylistsPage extends StatelessWidget {
     );
   }
 
-  void _openPlaylist(BuildContext context, String name, List<String> ids) {
-    showModalBottomSheet(
+  Future<String?> _promptText(BuildContext context, String title) async {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardTheme.color,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: TextField(controller: ctrl, autofocus: true),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Huỷ')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text),
+              child: const Text('Tạo')),
+        ],
       ),
-      builder: (_) {
-        final tracks = ids
-            .map((id) => logic.library.firstWhere((t) => t.id == id,
-                orElse: () => logic.library.first))
-            .toList();
-
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                        child: Text(name,
-                            style: Theme.of(context).textTheme.titleLarge)),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
-                    )
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: tracks.length,
-                    itemBuilder: (_, i) {
-                      final track = tracks[i];
-                      return Card(
-                        child: ListTile(
-                          leading: _CoverThumb(title: track.title),
-                          title: Text(track.title,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(track.artist,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          onTap: () {
-                            logic.setCurrent(track.id);
-                            Navigator.pop(context);
-                            _openNowPlaying(context, logic);
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
-  void _openNowPlaying(BuildContext context, AppLogic logic) {
+  void _openPlaylist(BuildContext context, String playlistId, String name) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).cardTheme.color,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) =>
+          _PlaylistSheet(logic: logic, playlistId: playlistId, name: name),
+    );
+  }
+}
+
+class _PlaylistSheet extends StatelessWidget {
+  final AppLogic logic;
+  final String playlistId;
+  final String name;
+
+  const _PlaylistSheet(
+      {required this.logic, required this.playlistId, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final ids = logic.playlistItems[playlistId] ?? const <String>[];
+    final tracks =
+        ids.map((id) => logic.library.firstWhere((t) => t.id == id)).toList();
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                    child: Text(name,
+                        style: Theme.of(context).textTheme.titleLarge)),
+                IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: tracks.length,
+                itemBuilder: (_, i) {
+                  final t = tracks[i];
+                  return Slidable(
+                    key: ValueKey('pli_${t.id}'),
+                    endActionPane: ActionPane(
+                      motion: const DrawerMotion(),
+                      children: [
+                        SlidableAction(
+                          onPressed: (_) async =>
+                              await logic.removeFromPlaylist(playlistId, t.id),
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                          icon: Icons.remove_circle_outline_rounded,
+                          label: 'Bỏ',
+                        ),
+                      ],
+                    ),
+                    child: Card(
+                      child: ListTile(
+                        leading: _CoverThumb(path: t.coverPath, title: t.title),
+                        title: Text(t.title,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(t.artist,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        onTap: () async {
+                          await logic.setCurrent(t.id, autoPlay: true);
+                          Navigator.pop(context);
+                          _openNowPlaying(context);
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _openNowPlaying(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).cardTheme.color,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => _NowPlayingSheet(logic: logic),
     );
   }
 }
 
+/// ===============================
+/// SETTINGS
+/// ===============================
 class _SettingsPage extends StatefulWidget {
   final AppLogic logic;
   const _SettingsPage({required this.logic});
@@ -415,24 +668,18 @@ class _SettingsPageState extends State<_SettingsPage> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _chip(
-                      context,
-                      label: 'Tối',
-                      selected: logic.settings.themeMode == ThemeMode.dark,
-                      onTap: () => logic.setThemeMode(ThemeMode.dark),
-                    ),
-                    _chip(
-                      context,
-                      label: 'Sáng',
-                      selected: logic.settings.themeMode == ThemeMode.light,
-                      onTap: () => logic.setThemeMode(ThemeMode.light),
-                    ),
-                    _chip(
-                      context,
-                      label: 'System',
-                      selected: logic.settings.themeMode == ThemeMode.system,
-                      onTap: () => logic.setThemeMode(ThemeMode.system),
-                    ),
+                    _chip(context,
+                        label: 'Tối',
+                        selected: logic.settings.themeMode == ThemeMode.dark,
+                        onTap: () => logic.setThemeMode(ThemeMode.dark)),
+                    _chip(context,
+                        label: 'Sáng',
+                        selected: logic.settings.themeMode == ThemeMode.light,
+                        onTap: () => logic.setThemeMode(ThemeMode.light)),
+                    _chip(context,
+                        label: 'System',
+                        selected: logic.settings.themeMode == ThemeMode.system,
+                        onTap: () => logic.setThemeMode(ThemeMode.system)),
                   ],
                 ),
               ],
@@ -469,17 +716,13 @@ class _SettingsPageState extends State<_SettingsPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: FilledButton(
-                    onPressed: () => logic.setAppTitle(_titleCtrl.text),
-                    child: const Text('Lưu'),
-                  ),
+                      onPressed: () => logic.setAppTitle(_titleCtrl.text),
+                      child: const Text('Lưu')),
                 ),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        const Text(
-            'Lưu ý: Setting được lưu vĩnh viễn (thoát app mở lại vẫn giữ).'),
       ],
     );
   }
@@ -509,6 +752,9 @@ class _SettingsPageState extends State<_SettingsPage> {
   }
 }
 
+/// ===============================
+/// NOW PLAYING (seek optimized)
+/// ===============================
 class _NowPlayingSheet extends StatefulWidget {
   final AppLogic logic;
   const _NowPlayingSheet({required this.logic});
@@ -525,11 +771,11 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
     final logic = widget.logic;
     final track = logic.currentTrack;
 
-    final title = track?.title ?? 'No track';
+    final title = track?.title ?? 'Chưa chọn bài';
     final artist = track?.artist ?? '';
     final duration = logic.currentDuration;
+    final playing = logic.handler.playbackState.value.playing;
 
-    /// FIX 2: khai báo biến fav ngoài children
     final fav = track != null && logic.favorites.contains(track.id);
 
     return SafeArea(
@@ -539,7 +785,7 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _handleBar(context),
+            _handleBar(),
             const SizedBox(height: 10),
             Row(
               children: [
@@ -547,33 +793,39 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                     child: Text('Đang phát',
                         style: Theme.of(context).textTheme.titleLarge)),
                 IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
-                ),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded)),
               ],
             ),
             const SizedBox(height: 12),
-            _BigCover(title: title),
+
+            _BigCover(path: track?.coverPath, title: title),
             const SizedBox(height: 12),
+
             Text(title,
                 style: Theme.of(context).textTheme.titleMedium,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
             const SizedBox(height: 4),
-            Text(
-              artist,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Colors.white70),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text(artist,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Colors.white70),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+
             const SizedBox(height: 12),
+
+            // Optimized seek bar:
+            // - no seek() in onChanged
+            // - seek() only in onChangeEnd
+            // - optimistic drag UI
             StreamBuilder<Duration>(
-              stream: logic.positionStream,
+              stream: logic.handler.player.createPositionStream(
+                  minPeriod: const Duration(milliseconds: 100)),
               initialData: logic.position,
-              builder: (context, snap) {
+              builder: (_, snap) {
                 final pos = snap.data ?? Duration.zero;
                 final posMs = pos.inMilliseconds.toDouble();
                 final durMs = math.max(duration.inMilliseconds, 1).toDouble();
@@ -588,9 +840,9 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                       max: durMs,
                       value: clamped,
                       onChanged: (v) => setState(() => _dragValue = v),
-                      onChangeEnd: (v) {
+                      onChangeEnd: (v) async {
                         setState(() => _dragValue = null);
-                        logic.seek(Duration(milliseconds: v.round()));
+                        await logic.seek(Duration(milliseconds: v.round()));
                       },
                     ),
                     Row(
@@ -608,13 +860,15 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                 );
               },
             ),
+
             const SizedBox(height: 8),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
                   tooltip: 'Loop one',
-                  onPressed: logic.toggleLoopOne,
+                  onPressed: () async => await logic.toggleLoopOne(),
                   icon: Icon(Icons.repeat_one_rounded,
                       color: logic.loopOne
                           ? Theme.of(context).colorScheme.primary
@@ -623,7 +877,7 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                 const SizedBox(width: 8),
                 IconButton(
                   tooltip: 'Previous',
-                  onPressed: logic.previous,
+                  onPressed: () async => await logic.previous(),
                   iconSize: 34,
                   icon: const Icon(Icons.skip_previous_rounded),
                 ),
@@ -635,24 +889,22 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(999)),
                   ),
-                  onPressed: logic.playPause,
+                  onPressed: () async => await logic.playPause(),
                   child: Icon(
-                      logic.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
+                      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                       size: 28),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
                   tooltip: 'Next',
-                  onPressed: logic.next,
+                  onPressed: () async => await logic.next(),
                   iconSize: 34,
                   icon: const Icon(Icons.skip_next_rounded),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
                   tooltip: 'Continuous play',
-                  onPressed: logic.toggleContinuous,
+                  onPressed: () async => await logic.toggleContinuous(),
                   icon: Icon(Icons.all_inclusive_rounded,
                       color: logic.continuousPlay
                           ? Theme.of(context).colorScheme.primary
@@ -660,7 +912,9 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                 ),
               ],
             ),
+
             const SizedBox(height: 10),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -684,14 +938,12 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
     );
   }
 
-  Widget _handleBar(BuildContext context) {
+  Widget _handleBar() {
     return Container(
       width: 40,
       height: 4,
       decoration: BoxDecoration(
-        color: Colors.white24,
-        borderRadius: BorderRadius.circular(999),
-      ),
+          color: Colors.white24, borderRadius: BorderRadius.circular(999)),
     );
   }
 
@@ -702,111 +954,80 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
   }
 }
 
-class _HeroPlayerCard extends StatelessWidget {
-  final AppLogic logic;
-  const _HeroPlayerCard({required this.logic});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = logic.currentTrack;
-    final title = t?.title ?? 'No track';
-    final artist = t?.artist ?? '';
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            _CoverThumb(title: title, size: 54),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.white70)),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            IconButton(
-              onPressed: logic.playPause,
-              icon: Icon(logic.isPlaying
-                  ? Icons.pause_rounded
-                  : Icons.play_arrow_rounded),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+/// ===============================
+/// Cover widgets (FileImage if exists)
+/// ===============================
 class _CoverThumb extends StatelessWidget {
+  final String? path;
   final String title;
   final double size;
-  const _CoverThumb({required this.title, this.size = 44});
+
+  const _CoverThumb({required this.path, required this.title, this.size = 44});
 
   @override
   Widget build(BuildContext context) {
-    final bg = Theme.of(context).colorScheme.primary.withOpacity(0.14);
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        title.isEmpty ? '?' : title.characters.first.toUpperCase(),
-        style: TextStyle(
-          fontSize: size * 0.38,
-          fontWeight: FontWeight.w700,
-          color: Theme.of(context).colorScheme.primary,
-        ),
+    final primary = Theme.of(context).colorScheme.primary;
+    final has = path != null && File(path!).existsSync();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: size,
+        height: size,
+        color: primary.withOpacity(0.14),
+        child: has
+            ? Image.file(File(path!), fit: BoxFit.cover)
+            : Center(
+                child: Text(
+                  title.isEmpty ? '?' : title.characters.first.toUpperCase(),
+                  style: TextStyle(
+                      fontSize: size * 0.38,
+                      fontWeight: FontWeight.w700,
+                      color: primary),
+                ),
+              ),
       ),
     );
   }
 }
 
 class _BigCover extends StatelessWidget {
+  final String? path;
   final String title;
-  const _BigCover({required this.title});
+
+  const _BigCover({required this.path, required this.title});
 
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final has = path != null && File(path!).existsSync();
+
     return AspectRatio(
       aspectRatio: 1,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              primary.withOpacity(0.34),
-              primary.withOpacity(0.08),
-            ],
-          ),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          title.isEmpty ? '♪' : title.characters.first.toUpperCase(),
-          style: TextStyle(
-              fontSize: 64, fontWeight: FontWeight.w800, color: primary),
-        ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: has
+            ? Image.file(File(path!), fit: BoxFit.cover)
+            : Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      primary.withOpacity(0.34),
+                      primary.withOpacity(0.08)
+                    ],
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  title.isEmpty ? '♪' : title.characters.first.toUpperCase(),
+                  style: TextStyle(
+                      fontSize: 64,
+                      fontWeight: FontWeight.w800,
+                      color: primary),
+                ),
+              ),
       ),
     );
   }
