@@ -2,7 +2,7 @@
   "assets": [
     {
       "encoding": {
-        "file": "C:\\Users\\ADMIN\\Downloads\\test1\\.dart_tool\\hooks_runner\\shared\\sqlite3\\build\\download-1aba6f35\\sqlite3.x64.windows.dll",
+        "file": "C:\\Users\\ADMIN\\Downloads\\test1\\.dart_tool\\hooks_runner\\shared\\sqlite3\\build\\download-d8c70ce\\sqlite3.x64.windows.dll",
         "id": "package:sqlite3/src/ffi/libsqlite3.g.dart",
         "link_mode": {
           "type": "dynamic_loading_bundle"
@@ -13,5 +13,5 @@
   ],
   "assets_for_linking": {},
   "status": "success",
-  "timestamp": "2026-02-11 19:48:17.000"
+  "timestamp": "2026-02-11 20:02:56.000"
 }
