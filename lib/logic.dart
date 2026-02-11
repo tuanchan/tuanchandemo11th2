@@ -359,7 +359,9 @@ class AppLogic extends ChangeNotifier {
       ),
     );
 
-    await _restorePlaybackState();
+    // CRITICAL FIX: Don't auto-restore playback on init
+    // Just load the state flags but don't start playing
+    await _restorePlaybackStateWithoutAutoPlay();
   }
 
   void _loadSettings() {
@@ -1075,9 +1077,10 @@ class AppLogic extends ChangeNotifier {
   }
 
   /// ===============================
-  /// Restore playback after reopen (no reset)
+  /// CRITICAL FIX: Restore state without auto-playing
+  /// This prevents the white screen and unwanted auto-resume
   /// ===============================
-  Future<void> _restorePlaybackState() async {
+  Future<void> _restorePlaybackStateWithoutAutoPlay() async {
     final rows = await _db!.query('playback_state', where: 'k=1', limit: 1);
     if (rows.isEmpty) return;
 
@@ -1085,12 +1088,23 @@ class AppLogic extends ChangeNotifier {
     loopOne = s.loopOne;
     continuousPlay = s.continuous;
 
+    // Load the track reference but DON'T start playing
     if (s.currentTrackId != null &&
         library.any((t) => t.id == s.currentTrackId)) {
-      final pos = Duration(milliseconds: s.positionMs);
-      await setCurrent(s.currentTrackId!, autoPlay: s.isPlaying, startPos: pos);
-    } else {
-      _current = library.isEmpty ? null : library.first;
+      _current = library.firstWhere((t) => t.id == s.currentTrackId);
+
+      // Set up the queue but don't play
+      final items = library.map(_toMediaItem).toList();
+      final idx = library.indexWhere((t) => t.id == s.currentTrackId);
+
+      if (idx >= 0) {
+        await handler.setQueueFromTracks(items, startIndex: idx);
+        await handler.setLoopOne(loopOne);
+        // Explicitly ensure we're paused
+        await handler.pause();
+      }
+    } else if (library.isNotEmpty) {
+      _current = library.first;
     }
 
     notifyListeners();

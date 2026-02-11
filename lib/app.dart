@@ -124,7 +124,7 @@ class _Shell extends StatelessWidget {
           BottomNavigationBarItem(
               icon: Icon(Icons.favorite_rounded), label: 'Yêu thích'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.library_music_rounded), label: 'Danh sách phát'),
+              icon: Icon(Icons.library_music_rounded), label: 'List'),
           BottomNavigationBarItem(
               icon: Icon(Icons.settings_rounded), label: 'Setting'),
         ],
@@ -844,7 +844,7 @@ class _SettingsPageState extends State<_SettingsPage> {
                     const Icon(Icons.title_rounded),
                     const SizedBox(width: 10),
                     Expanded(
-                        child: Text('Đổi title app (góc trái trên cùng)',
+                        child: Text('Đổi title app',
                             style: Theme.of(context).textTheme.titleMedium)),
                   ],
                 ),
@@ -901,7 +901,7 @@ class _SettingsPageState extends State<_SettingsPage> {
 }
 
 /// ===============================
-/// NOW PLAYING (smooth seek bar)
+/// NOW PLAYING (with trim-based segment creation)
 /// ===============================
 class _NowPlayingSheet extends StatefulWidget {
   final AppLogic logic;
@@ -914,6 +914,10 @@ class _NowPlayingSheet extends StatefulWidget {
 class _NowPlayingSheetState extends State<_NowPlayingSheet> {
   double? _dragValue;
   bool _isDragging = false;
+
+  // Trim markers for segment creation
+  int? _trimStartMs;
+  int? _trimEndMs;
 
   @override
   Widget build(BuildContext context) {
@@ -1068,14 +1072,8 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
 
             const SizedBox(height: 10),
 
-            // Add Favorite Segment Button
-            if (track != null)
-              FilledButton.tonalIcon(
-                icon: const Icon(Icons.cut_rounded),
-                label: const Text('Tạo phân đoạn yêu thích'),
-                onPressed: () =>
-                    _showCreateSegmentDialog(context, track, logic),
-              ),
+            // TRIM-BASED SEGMENT CREATION
+            if (track != null) _buildTrimControls(context, track, logic),
 
             const SizedBox(height: 10),
 
@@ -1100,6 +1098,163 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
         ),
       ),
     );
+  }
+
+  Widget _buildTrimControls(
+      BuildContext context, TrackRow track, AppLogic logic) {
+    final hasStart = _trimStartMs != null;
+    final hasEnd = _trimEndMs != null;
+
+    return Card(
+      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.cut_rounded, size: 18),
+                const SizedBox(width: 6),
+                Text('Tạo phân đoạn yêu thích',
+                    style: Theme.of(context).textTheme.titleSmall),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Expanded(
+                  child: FilledButton.tonal(
+                    onPressed: () {
+                      setState(() {
+                        _trimStartMs = logic.position.inMilliseconds;
+                      });
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.start_rounded, size: 18),
+                        const SizedBox(height: 4),
+                        Text(hasStart ? _fmtMs(_trimStartMs!) : 'Đánh dấu đầu'),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonal(
+                    onPressed: () {
+                      setState(() {
+                        _trimEndMs = logic.position.inMilliseconds;
+                      });
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.stop_rounded, size: 18),
+                        const SizedBox(height: 4),
+                        Text(hasEnd ? _fmtMs(_trimEndMs!) : 'Đánh dấu cuối'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (hasStart || hasEnd) const SizedBox(height: 8),
+            if (hasStart || hasEnd)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _trimStartMs = null;
+                        _trimEndMs = null;
+                      });
+                    },
+                    icon: const Icon(Icons.clear_rounded, size: 16),
+                    label: const Text('Xoá đánh dấu'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: (hasStart && hasEnd)
+                        ? () => _saveSegment(context, track, logic)
+                        : null,
+                    icon: const Icon(Icons.save_rounded, size: 16),
+                    label: const Text('Lưu phân đoạn'),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _saveSegment(
+      BuildContext context, TrackRow track, AppLogic logic) async {
+    if (_trimStartMs == null || _trimEndMs == null) return;
+
+    final start = _trimStartMs!;
+    final end = _trimEndMs!;
+
+    if (start >= end) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Điểm đầu phải nhỏ hơn điểm cuối')),
+      );
+      return;
+    }
+
+    final nameCtrl =
+        TextEditingController(text: 'Đoạn ${_fmtMs(start)} - ${_fmtMs(end)}');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Tên phân đoạn'),
+        content: TextField(
+          controller: nameCtrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'VD: Solo hay nhất',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Huỷ'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Lưu'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final name = nameCtrl.text.trim();
+      if (name.isEmpty) return;
+
+      await logic.addFavoriteSegment(
+        trackId: track.id,
+        name: name,
+        startMs: start,
+        endMs: end,
+      );
+
+      setState(() {
+        _trimStartMs = null;
+        _trimEndMs = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã lưu phân đoạn yêu thích')),
+        );
+      }
+    }
   }
 
   Widget _buildSeekBar(Duration duration) {
@@ -1184,104 +1339,9 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
     return '$mm:$ss';
   }
 
-  void _showCreateSegmentDialog(
-      BuildContext context, TrackRow track, AppLogic logic) {
-    final currentPos = logic.position.inMilliseconds;
-    final duration = logic.currentDuration.inMilliseconds;
-
-    final startCtrl = TextEditingController();
-    final endCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Tạo phân đoạn yêu thích'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Tên phân đoạn',
-                hintText: 'VD: Solo hay nhất',
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: startCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Bắt đầu (giây)',
-                      hintText: '0',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: endCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Kết thúc (giây)',
-                      hintText: '30',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            FilledButton.tonal(
-              onPressed: () {
-                startCtrl.text = (currentPos / 1000).round().toString();
-              },
-              child: const Text('Dùng vị trí hiện tại làm điểm bắt đầu'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Huỷ'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final name = nameCtrl.text.trim();
-              if (name.isEmpty) return;
-
-              final startSec = int.tryParse(startCtrl.text) ?? 0;
-              final endSec = int.tryParse(endCtrl.text) ?? (duration ~/ 1000);
-
-              final startMs = startSec * 1000;
-              final endMs = endSec * 1000;
-
-              if (startMs >= endMs || endMs > duration) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Thời gian không hợp lệ')),
-                );
-                return;
-              }
-
-              await logic.addFavoriteSegment(
-                trackId: track.id,
-                name: name,
-                startMs: startMs,
-                endMs: endMs,
-              );
-
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Đã tạo phân đoạn yêu thích')),
-              );
-            },
-            child: const Text('Tạo'),
-          ),
-        ],
-      ),
-    );
+  String _fmtMs(int ms) {
+    final d = Duration(milliseconds: ms);
+    return _fmt(d);
   }
 }
 
