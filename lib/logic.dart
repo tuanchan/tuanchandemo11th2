@@ -191,8 +191,11 @@ class PlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     );
   }
 
-  Future<void> setQueueFromTracks(List<MediaItem> items,
-      {int startIndex = 0, Duration? startPos}) async {
+  Future<void> setQueueFromTracks(
+    List<MediaItem> items, {
+    int startIndex = 0,
+    Duration? startPos,
+  }) async {
     queue.add(items);
 
     final sources = items.map((mi) {
@@ -200,8 +203,10 @@ class PlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return AudioSource.uri(uri, tag: mi);
     }).toList();
 
-    await _player.setAudioSource(ConcatenatingAudioSource(children: sources),
-        initialIndex: startIndex);
+    await _player.setAudioSource(
+      ConcatenatingAudioSource(children: sources),
+      initialIndex: startIndex,
+    );
 
     if (startPos != null) {
       await _player.seek(startPos);
@@ -411,15 +416,17 @@ class AppLogic extends ChangeNotifier {
             continuous INTEGER NOT NULL
           );
         ''');
+
         await db.insert(
-            'playback_state',
-            PlaybackStateRow(
-              currentTrackId: null,
-              positionMs: 0,
-              isPlaying: false,
-              loopOne: false,
-              continuous: true,
-            ).toMap());
+          'playback_state',
+          PlaybackStateRow(
+            currentTrackId: null,
+            positionMs: 0,
+            isPlaying: false,
+            loopOne: false,
+            continuous: true,
+          ).toMap(),
+        );
       },
     );
   }
@@ -443,8 +450,12 @@ class AppLogic extends ChangeNotifier {
 
     playlistItems.clear();
     for (final pl in playlists) {
-      final items = await db.query('playlist_items',
-          where: 'playlistId=?', whereArgs: [pl.id], orderBy: 'pos ASC');
+      final items = await db.query(
+        'playlist_items',
+        where: 'playlistId=?',
+        whereArgs: [pl.id],
+        orderBy: 'pos ASC',
+      );
       playlistItems[pl.id] = items.map((m) => m['trackId'] as String).toList();
     }
 
@@ -488,8 +499,12 @@ class AppLogic extends ChangeNotifier {
       final signature = '${p.basename(srcPath)}::${stat.size}';
 
       // dedupe by signature
-      final exists = await _db!.query('tracks',
-          where: 'signature=?', whereArgs: [signature], limit: 1);
+      final exists = await _db!.query(
+        'tracks',
+        where: 'signature=?',
+        whereArgs: [signature],
+        limit: 1,
+      );
       if (exists.isNotEmpty) continue;
 
       final id = _uuid();
@@ -554,13 +569,16 @@ class AppLogic extends ChangeNotifier {
     if (srcPath == null) return;
 
     final ext = p.extension(srcPath).toLowerCase();
-    final id = trackId;
-    final destPath = p.join(imageDir.path, 'cover_$id$ext');
+    final destPath = p.join(imageDir.path, 'cover_$trackId$ext');
 
     await File(srcPath).copy(destPath);
 
-    await _db!.update('tracks', {'coverPath': destPath},
-        where: 'id=?', whereArgs: [trackId]);
+    await _db!.update(
+      'tracks',
+      {'coverPath': destPath},
+      where: 'id=?',
+      whereArgs: [trackId],
+    );
     await _loadAllFromDb();
 
     // refresh current
@@ -572,8 +590,12 @@ class AppLogic extends ChangeNotifier {
   Future<void> renameTrack(String trackId, String newName) async {
     final name = newName.trim();
     if (name.isEmpty) return;
-    await _db!
-        .update('tracks', {'title': name}, where: 'id=?', whereArgs: [trackId]);
+    await _db!.update(
+      'tracks',
+      {'title': name},
+      where: 'id=?',
+      whereArgs: [trackId],
+    );
     await _loadAllFromDb();
     if (_current?.id == trackId) {
       _current = library.firstWhere((t) => t.id == trackId);
@@ -584,13 +606,17 @@ class AppLogic extends ChangeNotifier {
   /// Remove from app (delete copied audio file + db). Never touch original.
   Future<void> removeTrackFromApp(String trackId) async {
     final row = library.firstWhere((t) => t.id == trackId);
+
     // stop if currently playing this
     if (_current?.id == trackId) {
       await handler.pause();
       _current = null;
       position = Duration.zero;
       await _savePlaybackNow(
-          isPlaying: false, currentTrackId: null, positionMs: 0);
+        isPlaying: false,
+        currentTrackId: null,
+        positionMs: 0,
+      );
     }
 
     // delete files in app sandbox only
@@ -632,7 +658,10 @@ class AppLogic extends ChangeNotifier {
     if (n.isEmpty) return;
     final id = _uuid();
     final row = PlaylistRow(
-        id: id, name: n, createdAt: DateTime.now().millisecondsSinceEpoch);
+      id: id,
+      name: n,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
     await _db!.insert('playlists', row.toMap());
     await _loadAllFromDb();
   }
@@ -661,10 +690,146 @@ class AppLogic extends ChangeNotifier {
   }
 
   /// ===============================
+  /// NEW: Import directly into a playlist
+  /// ===============================
+  Future<void> importIntoPlaylist(String playlistId) async {
+    // iOS may not need storage permission; Android does. Keep safe:
+    if (!kIsWeb && (Platform.isAndroid)) {
+      final st = await Permission.audio.request();
+      if (!st.isGranted) return;
+    }
+
+    final res = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.custom,
+      allowedExtensions: const ['mp3', 'm4a'],
+      withData: false,
+    );
+
+    if (res == null || res.files.isEmpty) return;
+
+    for (final f in res.files) {
+      final srcPath = f.path;
+      if (srcPath == null) continue;
+
+      final ext = p.extension(srcPath).toLowerCase();
+      if (ext != '.mp3' && ext != '.m4a') continue;
+
+      final file = File(srcPath);
+      if (!await file.exists()) continue;
+
+      final stat = await file.stat();
+      final signature = '${p.basename(srcPath)}::${stat.size}';
+
+      // If exists in DB, reuse it
+      final exists = await _db!.query(
+        'tracks',
+        where: 'signature=?',
+        whereArgs: [signature],
+        limit: 1,
+      );
+
+      String trackId;
+
+      if (exists.isNotEmpty) {
+        trackId = exists.first['id'] as String;
+      } else {
+        // Import as new track
+        final id = _uuid();
+        final safeName = _safeFileName(p.basename(srcPath));
+        final destPath = p.join(audioDir.path, '${id}_$safeName');
+
+        await file.copy(destPath);
+
+        final durationMs = await _probeDurationMs(destPath);
+
+        final row = TrackRow(
+          id: id,
+          title: p.basenameWithoutExtension(safeName),
+          artist: 'Unknown',
+          localPath: destPath,
+          signature: signature,
+          coverPath: null,
+          durationMs: durationMs,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        );
+
+        await _db!.insert('tracks', row.toMap());
+        trackId = id;
+      }
+
+      // Add into playlist (no duplicates)
+      await addToPlaylist(playlistId, trackId);
+    }
+
+    await _loadAllFromDb();
+  }
+
+  /// ===============================
+  /// NEW: Find playlists containing a track
+  /// ===============================
+  List<PlaylistRow> playlistsContaining(String trackId) {
+    return playlists.where((pl) {
+      final ids = playlistItems[pl.id] ?? const <String>[];
+      return ids.contains(trackId);
+    }).toList();
+  }
+
+  /// ===============================
+  /// NEW: Play a playlist (ordered by pos)
+  /// ===============================
+  Future<void> playPlaylist(
+    String playlistId, {
+    bool autoPlay = true,
+    String? startTrackId,
+  }) async {
+    final ids = playlistItems[playlistId] ?? const <String>[];
+    if (ids.isEmpty) return;
+
+    final tracks = <TrackRow>[];
+    for (final id in ids) {
+      final t = library.where((x) => x.id == id).toList();
+      if (t.isNotEmpty) tracks.add(t.first);
+    }
+    if (tracks.isEmpty) return;
+
+    int startIndex = 0;
+    if (startTrackId != null) {
+      final i = tracks.indexWhere((t) => t.id == startTrackId);
+      if (i >= 0) startIndex = i;
+    }
+
+    final items = tracks.map(_toMediaItem).toList();
+
+    _current = tracks[startIndex];
+    position = Duration.zero;
+
+    await handler.setQueueFromTracks(items, startIndex: startIndex);
+    await handler.setLoopOne(loopOne);
+
+    if (autoPlay) {
+      await handler.play();
+    } else {
+      await handler.pause();
+    }
+
+    await _savePlaybackNow(
+      isPlaying: autoPlay,
+      currentTrackId: _current?.id,
+      positionMs: 0,
+    );
+
+    notifyListeners();
+  }
+
+  /// ===============================
   /// Playback control
   /// ===============================
-  Future<void> setCurrent(String trackId,
-      {bool autoPlay = true, Duration? startPos}) async {
+  Future<void> setCurrent(
+    String trackId, {
+    bool autoPlay = true,
+    Duration? startPos,
+  }) async {
     final idx = library.indexWhere((t) => t.id == trackId);
     if (idx < 0) return;
 
@@ -759,7 +924,6 @@ class AppLogic extends ChangeNotifier {
         library.any((t) => t.id == s.currentTrackId)) {
       final pos = Duration(milliseconds: s.positionMs);
       await setCurrent(s.currentTrackId!, autoPlay: s.isPlaying, startPos: pos);
-      // setCurrent already saves; fine.
     } else {
       _current = library.isEmpty ? null : library.first;
     }

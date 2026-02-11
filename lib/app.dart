@@ -287,16 +287,20 @@ class _TrackMenu extends StatelessWidget {
               value: 'addpl:${pl.id}', child: Text('Thêm vào: ${pl.name}'))),
           if (pls.isNotEmpty) const PopupMenuDivider(),
           const PopupMenuItem(
-              value: 'delete',
-              child: Text('Xoá khỏi app (không xoá file gốc)')),
+            value: 'delete',
+            child: Text('Xoá khỏi app (không xoá file gốc)'),
+          ),
         ];
       },
       icon: const Icon(Icons.more_vert_rounded),
     );
   }
 
-  Future<String?> _promptText(BuildContext context, String title,
-      {String initial = ''}) async {
+  Future<String?> _promptText(
+    BuildContext context,
+    String title, {
+    String initial = '',
+  }) async {
     final ctrl = TextEditingController(text: initial);
     return showDialog<String>(
       context: context,
@@ -343,13 +347,15 @@ class _HeroCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 4),
-                  Text(artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.white70)),
+                  Text(
+                    artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.white70),
+                  ),
                 ],
               ),
             ),
@@ -553,8 +559,25 @@ class _PlaylistSheet extends StatelessWidget {
                     child: Text(name,
                         style: Theme.of(context).textTheme.titleLarge)),
                 IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded)),
+                  tooltip: 'Phát danh sách',
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  onPressed: tracks.isEmpty
+                      ? null
+                      : () async {
+                          await logic.playPlaylist(playlistId);
+                          Navigator.pop(context);
+                        },
+                ),
+                IconButton(
+                  tooltip: 'Import vào playlist',
+                  icon: const Icon(Icons.file_upload_rounded),
+                  onPressed: () async =>
+                      await logic.importIntoPlaylist(playlistId),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -571,7 +594,10 @@ class _PlaylistSheet extends StatelessWidget {
                       children: [
                         SlidableAction(
                           onPressed: (_) async =>
-                              await logic.removeFromPlaylist(playlistId, t.id),
+                              await logic.removeFromPlaylist(
+                            playlistId,
+                            t.id,
+                          ),
                           backgroundColor: Colors.orange,
                           foregroundColor: Colors.white,
                           icon: Icons.remove_circle_outline_rounded,
@@ -587,7 +613,11 @@ class _PlaylistSheet extends StatelessWidget {
                         subtitle: Text(t.artist,
                             maxLines: 1, overflow: TextOverflow.ellipsis),
                         onTap: () async {
-                          await logic.setCurrent(t.id, autoPlay: true);
+                          await logic.playPlaylist(
+                            playlistId,
+                            startTrackId: t.id,
+                            autoPlay: true,
+                          );
                           Navigator.pop(context);
                           _openNowPlaying(context);
                         },
@@ -727,10 +757,12 @@ class _SettingsPageState extends State<_SettingsPage> {
     );
   }
 
-  Widget _chip(BuildContext context,
-      {required String label,
-      required bool selected,
-      required VoidCallback onTap}) {
+  Widget _chip(
+    BuildContext context, {
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: onTap,
@@ -753,7 +785,7 @@ class _SettingsPageState extends State<_SettingsPage> {
 }
 
 /// ===============================
-/// NOW PLAYING (seek optimized)
+/// NOW PLAYING (seek optimized + playlist play button)
 /// ===============================
 class _NowPlayingSheet extends StatefulWidget {
   final AppLogic logic;
@@ -778,6 +810,9 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
 
     final fav = track != null && logic.favorites.contains(track.id);
 
+    final pls =
+        track == null ? <PlaylistRow>[] : logic.playlistsContaining(track.id);
+
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -798,10 +833,8 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
               ],
             ),
             const SizedBox(height: 12),
-
             _BigCover(path: track?.coverPath, title: title),
             const SizedBox(height: 12),
-
             Text(title,
                 style: Theme.of(context).textTheme.titleMedium,
                 maxLines: 1,
@@ -814,13 +847,9 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                     ?.copyWith(color: Colors.white70),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-
             const SizedBox(height: 12),
 
-            // Optimized seek bar:
-            // - no seek() in onChanged
-            // - seek() only in onChangeEnd
-            // - optimistic drag UI
+            /// Seek optimized
             StreamBuilder<Duration>(
               stream: logic.handler.player.createPositionStream(
                   minPeriod: const Duration(milliseconds: 100)),
@@ -912,6 +941,51 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                 ),
               ],
             ),
+
+            if (pls.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: FilledButton.tonalIcon(
+                  icon: const Icon(Icons.playlist_play_rounded),
+                  label: const Text('Phát danh sách'),
+                  onPressed: () async {
+                    if (track == null) return;
+
+                    if (pls.length == 1) {
+                      await logic.playPlaylist(
+                        pls.first.id,
+                        startTrackId: track.id,
+                        autoPlay: true,
+                      );
+                      return;
+                    }
+
+                    final chosen = await showDialog<String>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Chọn playlist'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: pls
+                              .map((pl) => ListTile(
+                                    title: Text(pl.name),
+                                    onTap: () => Navigator.pop(context, pl.id),
+                                  ))
+                              .toList(),
+                        ),
+                      ),
+                    );
+
+                    if (chosen != null) {
+                      await logic.playPlaylist(
+                        chosen,
+                        startTrackId: track.id,
+                        autoPlay: true,
+                      );
+                    }
+                  },
+                ),
+              ),
 
             const SizedBox(height: 10),
 
