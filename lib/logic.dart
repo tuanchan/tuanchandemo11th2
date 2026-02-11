@@ -141,10 +141,8 @@ class PlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   AudioPlayer get player => _player;
 
   void _wire() {
-    // 100ms position stream (must-have)
-    _player
-        .createPositionStream(minPeriod: const Duration(milliseconds: 100))
-        .listen((pos) {
+    // Position stream
+    _player.positionStream.listen((pos) {
       onPosition(pos);
     });
 
@@ -690,7 +688,7 @@ class AppLogic extends ChangeNotifier {
   }
 
   /// ===============================
-  /// NEW: Import directly into a playlist
+  /// NEW: Import directly into a playlist - ALLOWS MULTIPLE FILE SELECTION
   /// ===============================
   Future<void> importIntoPlaylist(String playlistId) async {
     // iOS may not need storage permission; Android does. Keep safe:
@@ -700,7 +698,7 @@ class AppLogic extends ChangeNotifier {
     }
 
     final res = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
+      allowMultiple: true, // MULTIPLE FILES ENABLED
       type: FileType.custom,
       allowedExtensions: const ['mp3', 'm4a'],
       withData: false,
