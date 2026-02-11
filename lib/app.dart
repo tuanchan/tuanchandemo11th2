@@ -621,43 +621,52 @@ class _PlaylistSheet extends StatelessWidget {
         ids.map((id) => logic.library.firstWhere((t) => t.id == id)).toList();
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.9,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              children: [
-                Expanded(
-                    child: Text(name,
-                        style: Theme.of(context).textTheme.titleLarge)),
-                IconButton(
-                  tooltip: 'Phát danh sách',
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  onPressed: tracks.isEmpty
-                      ? null
-                      : () async {
-                          await logic.playPlaylist(playlistId);
-                          Navigator.pop(context);
-                        },
-                ),
-                IconButton(
-                  tooltip: 'Thêm file vào playlist',
-                  icon: const Icon(Icons.add_rounded),
-                  onPressed: () async =>
-                      await logic.importIntoPlaylist(playlistId),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
+            // Header - Fixed
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Column(
+                children: [
+                  _handleBar(),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                          child: Text(name,
+                              style: Theme.of(context).textTheme.titleLarge)),
+                      IconButton(
+                        tooltip: 'Phát danh sách',
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        onPressed: tracks.isEmpty
+                            ? null
+                            : () async {
+                                await logic.playPlaylist(playlistId);
+                                Navigator.pop(context);
+                              },
+                      ),
+                      IconButton(
+                        tooltip: 'Thêm file vào playlist',
+                        icon: const Icon(Icons.add_rounded),
+                        onPressed: () async =>
+                            await logic.importIntoPlaylist(playlistId),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Flexible(
+
+            // Scrollable content
+            Expanded(
               child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.only(top: 40),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 itemCount: tracks.length,
                 itemBuilder: (_, i) {
                   final t = tracks[i];
@@ -704,6 +713,15 @@ class _PlaylistSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _handleBar() {
+    return Container(
+      width: 40,
+      height: 4,
+      decoration: BoxDecoration(
+          color: Colors.white24, borderRadius: BorderRadius.circular(999)),
     );
   }
 
