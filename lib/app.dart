@@ -34,7 +34,7 @@ class _AppRootState extends State<AppRoot> {
   void _rebuild() => setState(() {});
 
   static const _orange = Color(0xFFFF4A00);
-  static const _bg = Color(0xFF121212);
+  static const _bg = Color(0xFF000000); // Changed to pure black
 
   ThemeData _theme(bool dark) {
     final base = dark ? ThemeData.dark() : ThemeData.light();
@@ -175,18 +175,13 @@ class _HomePage extends StatelessWidget {
             Expanded(
                 child: Text('Thư viện',
                     style: Theme.of(context).textTheme.titleLarge)),
-            FilledButton.tonalIcon(
-              onPressed: () => logic.importAudioFiles(),
-              icon: const Icon(Icons.file_upload_rounded),
-              label: const Text('Import'),
-            ),
           ],
         ),
         const SizedBox(height: 8),
         if (items.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 24),
-            child: Text('Chưa có file. Bấm Import để thêm mp3/m4a vào app.'),
+            child: Text('Chưa có file. Bấm nút + để thêm mp3/m4a vào app.'),
           ),
         ...items.map((t) {
           final isCurrent = (currentId == t.id);
@@ -569,8 +564,8 @@ class _PlaylistSheet extends StatelessWidget {
                         },
                 ),
                 IconButton(
-                  tooltip: 'Import vào playlist',
-                  icon: const Icon(Icons.file_upload_rounded),
+                  tooltip: 'Thêm file vào playlist',
+                  icon: const Icon(Icons.add_rounded),
                   onPressed: () async =>
                       await logic.importIntoPlaylist(playlistId),
                 ),
@@ -785,7 +780,7 @@ class _SettingsPageState extends State<_SettingsPage> {
 }
 
 /// ===============================
-/// NOW PLAYING (seek optimized + playlist play button)
+/// NOW PLAYING (smooth seek bar)
 /// ===============================
 class _NowPlayingSheet extends StatefulWidget {
   final AppLogic logic;
@@ -797,6 +792,7 @@ class _NowPlayingSheet extends StatefulWidget {
 
 class _NowPlayingSheetState extends State<_NowPlayingSheet> {
   double? _dragValue;
+  bool _isDragging = false;
 
   @override
   Widget build(BuildContext context) {
@@ -849,46 +845,8 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                 overflow: TextOverflow.ellipsis),
             const SizedBox(height: 12),
 
-            /// Seek optimized
-            StreamBuilder<Duration>(
-              stream: logic.handler.player.createPositionStream(
-                  minPeriod: const Duration(milliseconds: 100)),
-              initialData: logic.position,
-              builder: (_, snap) {
-                final pos = snap.data ?? Duration.zero;
-                final posMs = pos.inMilliseconds.toDouble();
-                final durMs = math.max(duration.inMilliseconds, 1).toDouble();
-
-                final value = _dragValue ?? posMs;
-                final clamped = value.clamp(0.0, durMs);
-
-                return Column(
-                  children: [
-                    Slider(
-                      min: 0,
-                      max: durMs,
-                      value: clamped,
-                      onChanged: (v) => setState(() => _dragValue = v),
-                      onChangeEnd: (v) async {
-                        setState(() => _dragValue = null);
-                        await logic.seek(Duration(milliseconds: v.round()));
-                      },
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(_fmt(Duration(milliseconds: clamped.round())),
-                            style: const TextStyle(
-                                fontFeatures: [FontFeature.tabularFigures()])),
-                        Text(_fmt(duration),
-                            style: const TextStyle(
-                                fontFeatures: [FontFeature.tabularFigures()])),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
+            /// Smooth seek bar
+            _buildSeekBar(duration),
 
             const SizedBox(height: 8),
 
@@ -1009,6 +967,73 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSeekBar(Duration duration) {
+    final durMs = math.max(duration.inMilliseconds, 1).toDouble();
+
+    return StreamBuilder<Duration>(
+      stream: widget.logic.handler.player.positionStream,
+      builder: (_, snap) {
+        final pos = _isDragging
+            ? Duration(milliseconds: _dragValue!.round())
+            : (snap.data ?? Duration.zero);
+        final posMs = pos.inMilliseconds.toDouble();
+        final value = _isDragging ? _dragValue! : posMs;
+        final clamped = value.clamp(0.0, durMs);
+
+        return Column(
+          children: [
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3.0,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 6.0),
+                overlayShape:
+                    const RoundSliderOverlayShape(overlayRadius: 14.0),
+              ),
+              child: Slider(
+                min: 0,
+                max: durMs,
+                value: clamped,
+                onChangeStart: (v) {
+                  setState(() {
+                    _isDragging = true;
+                    _dragValue = v;
+                  });
+                },
+                onChanged: (v) {
+                  setState(() {
+                    _dragValue = v;
+                  });
+                },
+                onChangeEnd: (v) async {
+                  await widget.logic.seek(Duration(milliseconds: v.round()));
+                  setState(() {
+                    _isDragging = false;
+                    _dragValue = null;
+                  });
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(_fmt(Duration(milliseconds: clamped.round())),
+                      style: const TextStyle(
+                          fontFeatures: [FontFeature.tabularFigures()])),
+                  Text(_fmt(duration),
+                      style: const TextStyle(
+                          fontFeatures: [FontFeature.tabularFigures()])),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
