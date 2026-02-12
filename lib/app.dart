@@ -1,5 +1,5 @@
 // app.dart
-// app.dart - CẬP NHẬT CHỈ THÊM AUDIO VISUALIZER
+// app.dart - CẬP NHẬT: VISUALIZER TO HƠN + STICKY HEROCARD
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -156,7 +156,7 @@ class _Shell extends StatelessWidget {
 }
 
 /// ===============================
-/// HOME (library) - THÊM SEARCH BAR
+/// HOME (library) - STICKY HEROCARD + SEARCH BAR
 /// ===============================
 class _HomePage extends StatefulWidget {
   final AppLogic logic;
@@ -182,116 +182,154 @@ class _HomePageState extends State<_HomePage> {
                 t.artist.toLowerCase().contains(_searchQuery.toLowerCase()))
             .toList();
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      children: [
-        _HeroCard(logic: widget.logic),
-        const SizedBox(height: 14),
-        TextField(
-          decoration: InputDecoration(
-            hintText: 'Tìm kiếm bài hát, nghệ sĩ...',
-            prefixIcon: const Icon(Icons.search_rounded),
-            suffixIcon: _searchQuery.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear_rounded),
-                    onPressed: () {
-                      setState(() {
-                        _searchQuery = '';
-                      });
-                    },
-                  )
-                : null,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            filled: true,
-            fillColor: Theme.of(context).cardColor,
-          ),
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value;
-            });
-          },
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-                child: Text('Thư viện',
-                    style: Theme.of(context).textTheme.titleLarge)),
-            if (_searchQuery.isNotEmpty)
-              Text('${filteredItems.length} kết quả',
-                  style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (items.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 24),
-            child: Text('Chưa có file. Bấm nút + để thêm mp3/m4a vào app.'),
-          ),
-        if (items.isNotEmpty && filteredItems.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 24),
-            child: Center(
-              child: Column(
-                children: [
-                  const Icon(Icons.search_off_rounded, size: 48),
-                  const SizedBox(height: 8),
-                  Text('Không tìm thấy "$_searchQuery"',
-                      style: Theme.of(context).textTheme.bodyLarge),
-                ],
-              ),
+    return CustomScrollView(
+      slivers: [
+        // ✨ HEROCARD STICKY (PINNED)
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _StickyHeroDelegate(
+            child: Container(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: _HeroCard(logic: widget.logic),
             ),
           ),
-        ...filteredItems.map((t) {
-          final isCurrent = (currentId == t.id);
-          final fav = widget.logic.favorites.contains(t.id);
+        ),
 
-          return Slidable(
-            key: ValueKey(t.id),
-            endActionPane: ActionPane(
-              motion: const DrawerMotion(),
-              children: [
-                SlidableAction(
-                  onPressed: (_) async =>
-                      await widget.logic.removeTrackFromApp(t.id),
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  icon: Icons.delete_rounded,
-                  label: 'Xoá',
+        // SEARCH BAR
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Tìm kiếm bài hát, nghệ sĩ...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded),
+                        onPressed: () {
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                filled: true,
+                fillColor: Theme.of(context).cardColor,
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+            ),
+          ),
+        ),
+
+        // HEADER
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                    child: Text('Thư viện',
+                        style: Theme.of(context).textTheme.titleLarge)),
+                if (_searchQuery.isNotEmpty)
+                  Text('${filteredItems.length} kết quả',
+                      style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
-            child: Card(
-              child: ListTile(
-                onTap: () async {
-                  await widget.logic.setCurrent(t.id, autoPlay: true);
-                  _openNowPlaying(context, widget.logic);
-                },
-                leading: _CoverThumb(path: t.coverPath, title: t.title),
-                title:
-                    Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(t.artist,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+          ),
+        ),
+
+        // EMPTY STATES
+        if (items.isEmpty)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: 24, left: 16, right: 16),
+              child: Text('Chưa có file. Bấm nút + để thêm mp3/m4a vào app.'),
+            ),
+          ),
+
+        if (items.isNotEmpty && filteredItems.isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 24),
+              child: Center(
+                child: Column(
                   children: [
-                    if (isCurrent) const Icon(Icons.equalizer_rounded),
-                    IconButton(
-                      tooltip: fav ? 'Bỏ thích' : 'Thích',
-                      onPressed: () => widget.logic.toggleFavorite(t.id),
-                      icon: Icon(fav
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded),
-                    ),
-                    _TrackMenu(logic: widget.logic, track: t),
+                    const Icon(Icons.search_off_rounded, size: 48),
+                    const SizedBox(height: 8),
+                    Text('Không tìm thấy "$_searchQuery"',
+                        style: Theme.of(context).textTheme.bodyLarge),
                   ],
                 ),
               ),
             ),
-          );
-        }),
+          ),
+
+        // TRACK LIST
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final t = filteredItems[index];
+                final isCurrent = (currentId == t.id);
+                final fav = widget.logic.favorites.contains(t.id);
+
+                return Slidable(
+                  key: ValueKey(t.id),
+                  endActionPane: ActionPane(
+                    motion: const DrawerMotion(),
+                    children: [
+                      SlidableAction(
+                        onPressed: (_) async =>
+                            await widget.logic.removeTrackFromApp(t.id),
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        icon: Icons.delete_rounded,
+                        label: 'Xoá',
+                      ),
+                    ],
+                  ),
+                  child: Card(
+                    child: ListTile(
+                      onTap: () async {
+                        await widget.logic.setCurrent(t.id, autoPlay: true);
+                        _openNowPlaying(context, widget.logic);
+                      },
+                      leading: _CoverThumb(path: t.coverPath, title: t.title),
+                      title: Text(t.title,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(t.artist,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isCurrent) const Icon(Icons.equalizer_rounded),
+                          IconButton(
+                            tooltip: fav ? 'Bỏ thích' : 'Thích',
+                            onPressed: () => widget.logic.toggleFavorite(t.id),
+                            icon: Icon(fav
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded),
+                          ),
+                          _TrackMenu(logic: widget.logic, track: t),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+              childCount: filteredItems.length,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -307,6 +345,30 @@ class _HomePageState extends State<_HomePage> {
       builder: (_) => _NowPlayingSheet(logic: logic),
     );
   }
+}
+
+/// ===============================
+/// ✨ STICKY HEADER DELEGATE
+/// ===============================
+class _StickyHeroDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+
+  _StickyHeroDelegate({required this.child});
+
+  @override
+  double get minExtent => 90; // Chiều cao tối thiểu khi sticky
+
+  @override
+  double get maxExtent => 90; // Chiều cao tối đa
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(_StickyHeroDelegate oldDelegate) => false;
 }
 
 class _TrackMenu extends StatelessWidget {
@@ -377,7 +439,7 @@ class _TrackMenu extends StatelessWidget {
 }
 
 /// ===============================
-/// HERO CARD - ĐÃ THÊM AUDIO VISUALIZER
+/// HERO CARD - ✨ VISUALIZER TO HƠN
 /// ===============================
 class _HeroCard extends StatelessWidget {
   final AppLogic logic;
@@ -419,7 +481,7 @@ class _HeroCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            // ✨ THÊM AUDIO VISUALIZER Ở ĐÂY
+            // ✨ AUDIO VISUALIZER (CHỈ HIỆN KHI ĐANG PHÁT)
             _AudioVisualizer(isPlaying: playing),
             const SizedBox(width: 8),
             IconButton(
@@ -435,7 +497,7 @@ class _HeroCard extends StatelessWidget {
 }
 
 /// ===============================
-/// ✨ AUDIO VISUALIZER WIDGET - 3 THANH XÁM NHẢY LÊN XUỐNG
+/// ✨ AUDIO VISUALIZER - TO HƠN, CHỈ HIỆN KHI PHÁT NHẠC
 /// ===============================
 class _AudioVisualizer extends StatefulWidget {
   final bool isPlaying;
@@ -517,23 +579,28 @@ class _AudioVisualizerState extends State<_AudioVisualizer>
 
   @override
   Widget build(BuildContext context) {
-    // Chiều cao tối đa của mỗi thanh (pixels)
-    final barHeights = [12.0, 8.0, 14.0];
+    // ✨ NẾU KHÔNG PHÁT NHẠC → KHÔNG HIỂN THỊ GÌ
+    if (!widget.isPlaying) {
+      return const SizedBox.shrink();
+    }
+
+    // ✨ CHIỀU CAO TỐI ĐA - TO HƠN (BẰNG VỚI THANH DƯỚI)
+    final barHeights = [18.0, 12.0, 20.0];
 
     return SizedBox(
-      height: 20,
+      height: 24, // Tăng container height
       child: Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end, // Căn đáy ngang nhau
         children: List.generate(3, (index) {
           return Padding(
             padding:
-                EdgeInsets.only(right: index < 2 ? 3 : 0), // Khoảng cách 3px
+                EdgeInsets.only(right: index < 2 ? 4 : 0), // Khoảng cách 4px
             child: AnimatedBuilder(
               animation: _animations[index],
               builder: (context, child) {
                 return Container(
-                  width: 3, // Độ rộng 3px
+                  width: 4, // ✨ Độ rộng 4px (to hơn)
                   height: barHeights[index] *
                       _animations[index].value, // Chiều cao thay đổi
                   decoration: BoxDecoration(
