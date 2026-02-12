@@ -137,8 +137,6 @@ class _AppRootState extends State<AppRoot> {
 
     return base.copyWith(
       useMaterial3: true,
-      fontFamily:
-          (cfg.fontFamily?.trim().isEmpty ?? true) ? null : cfg.fontFamily,
 
       scaffoldBackgroundColor: background,
 
