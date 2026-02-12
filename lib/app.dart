@@ -1002,6 +1002,58 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
   // Trim markers for segment creation
   int? _trimStartMs;
   int? _trimEndMs;
+  void _openTrimPopup(BuildContext context, TrackRow track, AppLogic logic) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).cardTheme.color,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            MediaQuery.of(context).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(Icons.cut_rounded),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Cắt phân đoạn yêu thích',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildTrimControls(context, track, logic),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1033,11 +1085,21 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                   Row(
                     children: [
                       Expanded(
-                          child: Text('Đang phát',
-                              style: Theme.of(context).textTheme.titleLarge)),
+                        child: Text('Đang phát',
+                            style: Theme.of(context).textTheme.titleLarge),
+                      ),
+                      if (track != null)
+                        IconButton(
+                          tooltip: 'Cắt phân đoạn',
+                          onPressed: () =>
+                              _openTrimPopup(context, track, logic),
+                          icon: const Icon(Icons.cut_rounded),
+                        ),
+                      if (track != null) _TrackMenu(logic: logic, track: track),
                       IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close_rounded)),
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
                     ],
                   ),
                 ],
@@ -1050,7 +1112,18 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: Column(
                   children: [
-                    _BigCover(path: track?.coverPath, title: title),
+                    GestureDetector(
+                      onHorizontalDragEnd: (d) async {
+                        final v = d.primaryVelocity ?? 0;
+                        if (v < -200) {
+                          await logic.next(); // swipe left
+                        } else if (v > 200) {
+                          await logic.previous(); // swipe right
+                        }
+                      },
+                      child: _BigCover(path: track?.coverPath, title: title),
+                    ),
+
                     const SizedBox(height: 12),
                     Text(title,
                         style: Theme.of(context).textTheme.titleMedium,
@@ -1130,67 +1203,8 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                                   ? Theme.of(context).colorScheme.primary
                                   : Colors.white70),
                         ),
-                        IconButton(
-                          tooltip: 'Continuous play',
-                          onPressed: () async => await logic.toggleContinuous(),
-                          icon: Icon(Icons.all_inclusive_rounded,
-                              color: logic.continuousPlay
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Colors.white70),
-                        ),
                       ],
                     ),
-
-                    if (pls.isNotEmpty) const SizedBox(height: 8),
-
-                    if (pls.isNotEmpty)
-                      FilledButton.tonalIcon(
-                        icon: const Icon(Icons.playlist_play_rounded, size: 18),
-                        label: const Text('Phát danh sách'),
-                        onPressed: () async {
-                          if (track == null) return;
-
-                          if (pls.length == 1) {
-                            await logic.playPlaylist(
-                              pls.first.id,
-                              startTrackId: track.id,
-                              autoPlay: true,
-                            );
-                            return;
-                          }
-
-                          final chosen = await showDialog<String>(
-                            context: context,
-                            builder: (_) => AlertDialog(
-                              title: const Text('Chọn playlist'),
-                              content: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: pls
-                                    .map((pl) => ListTile(
-                                          title: Text(pl.name),
-                                          onTap: () =>
-                                              Navigator.pop(context, pl.id),
-                                        ))
-                                    .toList(),
-                              ),
-                            ),
-                          );
-
-                          if (chosen != null) {
-                            await logic.playPlaylist(
-                              chosen,
-                              startTrackId: track.id,
-                              autoPlay: true,
-                            );
-                          }
-                        },
-                      ),
-
-                    const SizedBox(height: 16),
-
-                    // TRIM-BASED SEGMENT CREATION
-                    if (track != null)
-                      _buildTrimControls(context, track, logic),
                   ],
                 ),
               ),

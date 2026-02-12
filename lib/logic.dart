@@ -312,6 +312,7 @@ class AppLogic extends ChangeNotifier {
   final List<PlaylistRow> playlists = [];
   final Map<String, List<String>> playlistItems = {}; // playlistId -> trackIds
   final List<FavoriteSegment> favoriteSegments = [];
+  StreamSubscription<MediaItem?>? _mediaItemSub;
 
   // Player
   late final PlayerHandler handler;
@@ -358,6 +359,17 @@ class AppLogic extends ChangeNotifier {
         androidNotificationOngoing: true,
       ),
     );
+    // Sync UI currentTrack theo MediaItem thật của player (fix lệch bài khi auto-next / playlist)
+    _mediaItemSub = handler.mediaItem.listen((mi) {
+      if (mi == null) return;
+      final id = mi.id;
+
+      final i = library.indexWhere((t) => t.id == id);
+      if (i >= 0) {
+        _current = library[i];
+        notifyListeners();
+      }
+    });
 
     // CRITICAL FIX: Don't auto-restore playback on init
     // Just load the state flags but don't start playing
@@ -1042,18 +1054,14 @@ class AppLogic extends ChangeNotifier {
 
   Future<void> next() async {
     await handler.skipToNext();
-    final idx = handler.playbackState.value.queueIndex ?? 0;
-    if (idx >= 0 && idx < library.length) _current = library[idx];
     _scheduleSavePlayback();
-    notifyListeners();
+    notifyListeners(); // _current sẽ được update bởi mediaItem listener
   }
 
   Future<void> previous() async {
     await handler.skipToPrevious();
-    final idx = handler.playbackState.value.queueIndex ?? 0;
-    if (idx >= 0 && idx < library.length) _current = library[idx];
     _scheduleSavePlayback();
-    notifyListeners();
+    notifyListeners(); // _current sẽ được update bởi mediaItem listener
   }
 
   Future<void> seek(Duration to) async {
@@ -1167,6 +1175,7 @@ class AppLogic extends ChangeNotifier {
   @override
   void dispose() {
     _saveTimer?.cancel();
+    _mediaItemSub?.cancel();
     handler.stop();
     _db?.close();
     super.dispose();

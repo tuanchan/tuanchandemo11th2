@@ -1,0 +1,15 @@
+# Target labels
+ nuget-populate
+# Source files and their labels
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/nuget-populate
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/c95c002cea1338d312a88c495365285a/nuget-populate.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/4b6db04ac71bd2256fa14c00adc5ec99/nuget-populate-complete.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-build.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-configure.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-copyfile.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-download.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-install.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-mkdir.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-patch.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-test.rule
+C:/Users/ADMIN/Downloads/test1/test1/build/windows/x64/_deps/nuget-subbuild/CMakeFiles/e8f5b0ba591a03ee1ceabe2b1b66511d/nuget-populate-update.rule
