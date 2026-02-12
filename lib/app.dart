@@ -1,4 +1,5 @@
 // app.dart
+// app.dart - CẬP NHẬT CHỈ THÊM AUDIO VISUALIZER
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -173,7 +174,6 @@ class _HomePageState extends State<_HomePage> {
     final items = widget.logic.library;
     final currentId = widget.logic.currentTrack?.id;
 
-    // Lọc theo search query
     final filteredItems = _searchQuery.isEmpty
         ? items
         : items
@@ -187,8 +187,6 @@ class _HomePageState extends State<_HomePage> {
       children: [
         _HeroCard(logic: widget.logic),
         const SizedBox(height: 14),
-
-        // SEARCH BAR
         TextField(
           decoration: InputDecoration(
             hintText: 'Tìm kiếm bài hát, nghệ sĩ...',
@@ -216,7 +214,6 @@ class _HomePageState extends State<_HomePage> {
           },
         ),
         const SizedBox(height: 14),
-
         Row(
           children: [
             Expanded(
@@ -312,7 +309,6 @@ class _HomePageState extends State<_HomePage> {
   }
 }
 
-/// 3 dots menu per file
 class _TrackMenu extends StatelessWidget {
   final AppLogic logic;
   final TrackRow track;
@@ -380,6 +376,9 @@ class _TrackMenu extends StatelessWidget {
   }
 }
 
+/// ===============================
+/// HERO CARD - ĐÃ THÊM AUDIO VISUALIZER
+/// ===============================
 class _HeroCard extends StatelessWidget {
   final AppLogic logic;
   const _HeroCard({required this.logic});
@@ -420,6 +419,9 @@ class _HeroCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
+            // ✨ THÊM AUDIO VISUALIZER Ở ĐÂY
+            _AudioVisualizer(isPlaying: playing),
+            const SizedBox(width: 8),
             IconButton(
               onPressed: () async => await logic.playPause(),
               icon: Icon(
@@ -433,8 +435,123 @@ class _HeroCard extends StatelessWidget {
 }
 
 /// ===============================
-/// FAVORITES
+/// ✨ AUDIO VISUALIZER WIDGET - 3 THANH XÁM NHẢY LÊN XUỐNG
 /// ===============================
+class _AudioVisualizer extends StatefulWidget {
+  final bool isPlaying;
+  const _AudioVisualizer({required this.isPlaying});
+
+  @override
+  State<_AudioVisualizer> createState() => _AudioVisualizerState();
+}
+
+class _AudioVisualizerState extends State<_AudioVisualizer>
+    with TickerProviderStateMixin {
+  late List<AnimationController> _controllers;
+  late List<Animation<double>> _animations;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Tạo 3 animation controllers
+    _controllers = List.generate(
+      3,
+      (index) => AnimationController(
+        duration: const Duration(milliseconds: 1200), // 1.2 giây - chậm
+        vsync: this,
+      ),
+    );
+
+    // Tạo animations từ 0.4 đến 1.0 (scale)
+    _animations = _controllers.map((controller) {
+      return Tween<double>(begin: 0.4, end: 1.0).animate(
+        CurvedAnimation(parent: controller, curve: Curves.easeInOut),
+      );
+    }).toList();
+
+    // Nếu đang phát thì start animations
+    if (widget.isPlaying) {
+      _startAnimations();
+    }
+  }
+
+  void _startAnimations() {
+    // Stagger - mỗi thanh delay 300ms
+    for (int i = 0; i < _controllers.length; i++) {
+      Future.delayed(Duration(milliseconds: i * 300), () {
+        if (mounted && widget.isPlaying) {
+          _controllers[i].repeat(reverse: true); // Lên xuống liên tục
+        }
+      });
+    }
+  }
+
+  void _stopAnimations() {
+    for (var controller in _controllers) {
+      controller.stop();
+      controller.value = 0.4; // Reset về chiều cao nhỏ nhất
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AudioVisualizer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Khi trạng thái phát/dừng thay đổi
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      if (widget.isPlaying) {
+        _startAnimations();
+      } else {
+        _stopAnimations();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Chiều cao tối đa của mỗi thanh (pixels)
+    final barHeights = [12.0, 8.0, 14.0];
+
+    return SizedBox(
+      height: 20,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end, // Căn đáy ngang nhau
+        children: List.generate(3, (index) {
+          return Padding(
+            padding:
+                EdgeInsets.only(right: index < 2 ? 3 : 0), // Khoảng cách 3px
+            child: AnimatedBuilder(
+              animation: _animations[index],
+              builder: (context, child) {
+                return Container(
+                  width: 3, // Độ rộng 3px
+                  height: barHeights[index] *
+                      _animations[index].value, // Chiều cao thay đổi
+                  decoration: BoxDecoration(
+                    color: Colors.grey, // Màu xám
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                );
+              },
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// ... CÁC PHẦN CÒN LẠI GIỮ NGUYÊN NHƯ CŨ ...
+
 class _FavoritesPage extends StatelessWidget {
   final AppLogic logic;
   const _FavoritesPage({required this.logic});
@@ -498,9 +615,6 @@ class _FavoritesPage extends StatelessWidget {
   }
 }
 
-/// ===============================
-/// PLAYLISTS
-/// ===============================
 class _PlaylistsPage extends StatelessWidget {
   final AppLogic logic;
   const _PlaylistsPage({required this.logic});
@@ -625,7 +739,6 @@ class _PlaylistSheet extends StatelessWidget {
         height: MediaQuery.of(context).size.height * 0.9,
         child: Column(
           children: [
-            // Header - Fixed
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Column(
@@ -662,8 +775,6 @@ class _PlaylistSheet extends StatelessWidget {
                 ],
               ),
             ),
-
-            // Scrollable content
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -737,9 +848,6 @@ class _PlaylistSheet extends StatelessWidget {
   }
 }
 
-/// ===============================
-/// FAVORITE SEGMENTS SHEET
-/// ===============================
 class _FavoriteSegmentsSheet extends StatelessWidget {
   final AppLogic logic;
 
@@ -845,9 +953,6 @@ class _FavoriteSegmentsSheet extends StatelessWidget {
   }
 }
 
-/// ===============================
-/// SETTINGS
-/// ===============================
 class _SettingsPage extends StatefulWidget {
   final AppLogic logic;
   const _SettingsPage({required this.logic});
@@ -984,9 +1089,6 @@ class _SettingsPageState extends State<_SettingsPage> {
   }
 }
 
-/// ===============================
-/// NOW PLAYING - SỬA LẠI LAYOUT ĐỂ SCROLL ĐƯỢC
-/// ===============================
 class _NowPlayingSheet extends StatefulWidget {
   final AppLogic logic;
   const _NowPlayingSheet({required this.logic});
@@ -999,9 +1101,9 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
   double? _dragValue;
   bool _isDragging = false;
 
-  // Trim markers for segment creation
   int? _trimStartMs;
   int? _trimEndMs;
+
   void _openTrimPopup(BuildContext context, TrackRow track, AppLogic logic) {
     showModalBottomSheet(
       context: context,
@@ -1075,7 +1177,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
         height: MediaQuery.of(context).size.height * 0.9,
         child: Column(
           children: [
-            // Header - Fixed
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Column(
@@ -1105,8 +1206,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                 ],
               ),
             ),
-
-            // Scrollable content
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -1116,14 +1215,13 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                       onHorizontalDragEnd: (d) async {
                         final v = d.primaryVelocity ?? 0;
                         if (v < -200) {
-                          await logic.next(); // swipe left
+                          await logic.next();
                         } else if (v > 200) {
-                          await logic.previous(); // swipe right
+                          await logic.previous();
                         }
                       },
                       child: _BigCover(path: track?.coverPath, title: title),
                     ),
-
                     const SizedBox(height: 12),
                     Text(title,
                         style: Theme.of(context).textTheme.titleMedium,
@@ -1138,13 +1236,8 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 12),
-
-                    /// Smooth seek bar
                     _buildSeekBar(duration),
-
                     const SizedBox(height: 16),
-
-                    // Nút điều khiển chính - Thu gọn
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1176,10 +1269,7 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 12),
-
-                    // Các chức năng phụ - Thu gọn thành 1 hàng
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1466,9 +1556,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
   }
 }
 
-/// ===============================
-/// Cover widgets (FileImage if exists)
-/// ===============================
 class _CoverThumb extends StatelessWidget {
   final String? path;
   final String title;
