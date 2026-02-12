@@ -193,8 +193,8 @@ class _HomePageState extends State<_HomePage> {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                 child: Container(
-                  color:
-                      Colors.transparent, // ✅ bỏ nền đen, để card tự "lơ lửng"
+                  color: const Color.fromARGB(
+                      0, 255, 255, 255), // ✅ bỏ nền đen, để card tự "lơ lửng"
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
                   child: _FloatingHero(child: _HeroCard(logic: widget.logic)),
                 ),
