@@ -329,6 +329,17 @@ class AppLogic extends ChangeNotifier {
 
   // throttle save playback
   Timer? _saveTimer;
+  Future<void> seekRelative(Duration delta) async {
+    final cur = position; // Duration hiện tại (anh đang dùng logic.position)
+    final dur = currentDuration; // Duration tổng
+
+    var next = cur + delta;
+
+    if (next < Duration.zero) next = Duration.zero;
+    if (next > dur) next = dur;
+
+    await seek(next); // hàm seek anh đã có: Future<void> seek(Duration)
+  }
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();

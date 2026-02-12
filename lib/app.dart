@@ -1374,7 +1374,10 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                         // ✨ TUA LÙI 5 GIÂY
                         _SeekStepButton(
                           seconds: -5,
-                          onPressed: null, // TODO: gắn sự kiện sau
+                          onPressed: track == null
+                              ? null
+                              : () => widget.logic
+                                  .seekRelative(const Duration(seconds: -5)),
                         ),
                         const SizedBox(width: 8),
                         // PLAY / PAUSE
@@ -1394,7 +1397,10 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                         // ✨ TUA TIẾN 5 GIÂY
                         _SeekStepButton(
                           seconds: 5,
-                          onPressed: null, // TODO: gắn sự kiện sau
+                          onPressed: track == null
+                              ? null
+                              : () => widget.logic
+                                  .seekRelative(const Duration(seconds: 5)),
                         ),
                         const SizedBox(width: 4),
                         // SKIP NEXT
