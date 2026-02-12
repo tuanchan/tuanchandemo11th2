@@ -1,4 +1,5 @@
 // app.dart
+
 // app.dart - CẬP NHẬT: VISUALIZER TO HƠN + STICKY HEROCARD
 import 'dart:io';
 import 'dart:math' as math;
@@ -188,10 +189,16 @@ class _HomePageState extends State<_HomePage> {
         SliverPersistentHeader(
           pinned: true,
           delegate: _StickyHeroDelegate(
-            child: Container(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: _HeroCard(logic: widget.logic),
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                child: Container(
+                  // nền mờ (không còn đen đặc)
+                  color: Colors.black.withOpacity(0.35),
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6), // giảm
+                  child: _FloatingHero(child: _HeroCard(logic: widget.logic)),
+                ),
+              ),
             ),
           ),
         ),
@@ -311,7 +318,15 @@ class _HomePageState extends State<_HomePage> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (isCurrent) const Icon(Icons.equalizer_rounded),
+                          // ✨ VISUALIZER giống HeroCard khi đang phát
+                          if (isCurrent)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: _AudioVisualizer(
+                                isPlaying: widget
+                                    .logic.handler.playbackState.value.playing,
+                              ),
+                            ),
                           IconButton(
                             tooltip: fav ? 'Bỏ thích' : 'Thích',
                             onPressed: () => widget.logic.toggleFavorite(t.id),
@@ -348,18 +363,21 @@ class _HomePageState extends State<_HomePage> {
 }
 
 /// ===============================
-/// ✨ STICKY HEADER DELEGATE
+/// ✅ STICKY HEADER DELEGATE - ĐÃ FIX OVERFLOW
 /// ===============================
 class _StickyHeroDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
 
   _StickyHeroDelegate({required this.child});
 
+  // ✅ FIX: Tăng lên 100 để đủ chỗ cho Card + padding trên mọi thiết bị
+  // Công thức: padding(top 8 + bottom 4) + Card(padding 12*2 + cover 54) = 102
+  // Dùng 104 để thêm chút buffer an toàn
   @override
-  double get minExtent => 90; // Chiều cao tối thiểu khi sticky
+  double get minExtent => 132;
 
   @override
-  double get maxExtent => 90; // Chiều cao tối đa
+  double get maxExtent => 132;
 
   @override
   Widget build(
@@ -439,7 +457,7 @@ class _TrackMenu extends StatelessWidget {
 }
 
 /// ===============================
-/// HERO CARD - ✨ VISUALIZER TO HƠN
+/// HERO CARD - ✅ FIX PADDING ĐỂ TRÁNH OVERFLOW
 /// ===============================
 class _HeroCard extends StatelessWidget {
   final AppLogic logic;
@@ -453,21 +471,25 @@ class _HeroCard extends StatelessWidget {
     final playing = logic.handler.playbackState.value.playing;
 
     return Card(
+      margin: EdgeInsets.zero, // <-- thêm
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        // ✅ FIX: Giảm padding từ 16 → 12 để vừa với chiều cao delegate 104
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
-            _CoverThumb(path: t?.coverPath, title: title, size: 54),
+            // ✅ FIX: Giảm size cover từ 54 → 48 để tránh overflow
+            _CoverThumb(path: t?.coverPath, title: title, size: 48),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min, // ✅ FIX: thêm mainAxisSize.min
                 children: [
                   Text(title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2), // ✅ FIX: Giảm từ 4 → 2
                   Text(
                     artist,
                     maxLines: 1,
@@ -480,14 +502,18 @@ class _HeroCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             // ✨ AUDIO VISUALIZER (CHỈ HIỆN KHI ĐANG PHÁT)
             _AudioVisualizer(isPlaying: playing),
-            const SizedBox(width: 8),
+            // ✅ FIX: Xoá SizedBox(width: 8) giữa visualizer và button
+            // để tiết kiệm chiều rộng, tránh overflow dọc do Row bị ép
             IconButton(
               onPressed: () async => await logic.playPause(),
               icon: Icon(
                   playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+              // ✅ FIX: padding nhỏ hơn để vừa với chiều cao
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
           ],
         ),
@@ -516,34 +542,30 @@ class _AudioVisualizerState extends State<_AudioVisualizer>
   void initState() {
     super.initState();
 
-    // Tạo 3 animation controllers
     _controllers = List.generate(
       3,
       (index) => AnimationController(
-        duration: const Duration(milliseconds: 1200), // 1.2 giây - chậm
+        duration: const Duration(milliseconds: 1200),
         vsync: this,
       ),
     );
 
-    // Tạo animations từ 0.4 đến 1.0 (scale)
     _animations = _controllers.map((controller) {
       return Tween<double>(begin: 0.4, end: 1.0).animate(
         CurvedAnimation(parent: controller, curve: Curves.easeInOut),
       );
     }).toList();
 
-    // Nếu đang phát thì start animations
     if (widget.isPlaying) {
       _startAnimations();
     }
   }
 
   void _startAnimations() {
-    // Stagger - mỗi thanh delay 300ms
     for (int i = 0; i < _controllers.length; i++) {
       Future.delayed(Duration(milliseconds: i * 300), () {
         if (mounted && widget.isPlaying) {
-          _controllers[i].repeat(reverse: true); // Lên xuống liên tục
+          _controllers[i].repeat(reverse: true);
         }
       });
     }
@@ -552,14 +574,13 @@ class _AudioVisualizerState extends State<_AudioVisualizer>
   void _stopAnimations() {
     for (var controller in _controllers) {
       controller.stop();
-      controller.value = 0.4; // Reset về chiều cao nhỏ nhất
+      controller.value = 0.4;
     }
   }
 
   @override
   void didUpdateWidget(_AudioVisualizer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Khi trạng thái phát/dừng thay đổi
     if (widget.isPlaying != oldWidget.isPlaying) {
       if (widget.isPlaying) {
         _startAnimations();
@@ -579,32 +600,28 @@ class _AudioVisualizerState extends State<_AudioVisualizer>
 
   @override
   Widget build(BuildContext context) {
-    // ✨ NẾU KHÔNG PHÁT NHẠC → KHÔNG HIỂN THỊ GÌ
     if (!widget.isPlaying) {
       return const SizedBox.shrink();
     }
 
-    // ✨ CHIỀU CAO TỐI ĐA - TO HƠN (BẰNG VỚI THANH DƯỚI)
     final barHeights = [18.0, 12.0, 20.0];
 
     return SizedBox(
-      height: 24, // Tăng container height
+      height: 24,
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end, // Căn đáy ngang nhau
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: List.generate(3, (index) {
           return Padding(
-            padding:
-                EdgeInsets.only(right: index < 2 ? 4 : 0), // Khoảng cách 4px
+            padding: EdgeInsets.only(right: index < 2 ? 4 : 0),
             child: AnimatedBuilder(
               animation: _animations[index],
               builder: (context, child) {
                 return Container(
-                  width: 4, // ✨ Độ rộng 4px (to hơn)
-                  height: barHeights[index] *
-                      _animations[index].value, // Chiều cao thay đổi
+                  width: 4,
+                  height: barHeights[index] * _animations[index].value,
                   decoration: BoxDecoration(
-                    color: Colors.grey, // Màu xám
+                    color: Colors.grey,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 );
@@ -613,6 +630,44 @@ class _AudioVisualizerState extends State<_AudioVisualizer>
           );
         }),
       ),
+    );
+  }
+}
+
+/// ===============================
+/// ✨ NÚT TUA 5 GIÂY - REUSABLE WIDGET
+/// ===============================
+class _SeekStepButton extends StatelessWidget {
+  final int seconds; // -5 = lùi, +5 = tiến
+  final VoidCallback? onPressed;
+
+  const _SeekStepButton({
+    required this.seconds,
+    this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isRewind = seconds < 0;
+    final s = seconds.abs();
+
+    // iOS-ish: gobackward/goforward
+    IconData icon;
+    if (isRewind) {
+      icon =
+          (s == 5) ? Icons.replay_5_rounded : Icons.replay_rounded; // fallback
+    } else {
+      icon = (s == 5)
+          ? Icons.forward_5_rounded
+          : Icons.forward_rounded; // fallback
+    }
+
+    return IconButton(
+      tooltip: isRewind ? 'Tua lùi ${s}s' : 'Tua tới ${s}s',
+      onPressed: onPressed,
+      iconSize: 30,
+      splashRadius: 22, // cảm giác iOS hơn
+      icon: Icon(icon),
     );
   }
 }
@@ -1308,13 +1363,21 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        // SKIP PREVIOUS
                         IconButton(
                           tooltip: 'Previous',
                           onPressed: () async => await logic.previous(),
                           iconSize: 32,
                           icon: const Icon(Icons.skip_previous_rounded),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 4),
+                        // ✨ TUA LÙI 5 GIÂY
+                        _SeekStepButton(
+                          seconds: -5,
+                          onPressed: null, // TODO: gắn sự kiện sau
+                        ),
+                        const SizedBox(width: 8),
+                        // PLAY / PAUSE
                         FilledButton(
                           style: FilledButton.styleFrom(
                             padding: const EdgeInsets.all(16),
@@ -1327,7 +1390,14 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                                   : Icons.play_arrow_rounded,
                               size: 32),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
+                        // ✨ TUA TIẾN 5 GIÂY
+                        _SeekStepButton(
+                          seconds: 5,
+                          onPressed: null, // TODO: gắn sự kiện sau
+                        ),
+                        const SizedBox(width: 4),
+                        // SKIP NEXT
                         IconButton(
                           tooltip: 'Next',
                           onPressed: () async => await logic.next(),
@@ -1541,12 +1611,16 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
     return StreamBuilder<Duration>(
       stream: widget.logic.handler.player.positionStream,
       builder: (_, snap) {
-        final pos = _isDragging
+        final dragging = _isDragging && _dragValue != null;
+
+        final pos = dragging
             ? Duration(milliseconds: _dragValue!.round())
             : (snap.data ?? Duration.zero);
-        final posMs = pos.inMilliseconds.toDouble();
-        final value = _isDragging ? _dragValue! : posMs;
-        final clamped = value.clamp(0.0, durMs);
+
+        final sliderValue =
+            dragging ? _dragValue! : pos.inMilliseconds.toDouble();
+
+        final clamped = sliderValue.clamp(0.0, durMs);
 
         return Column(
           children: [
@@ -1587,12 +1661,18 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_fmt(Duration(milliseconds: clamped.round())),
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()])),
-                  Text(_fmt(duration),
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()])),
+                  Text(
+                    _fmt(Duration(milliseconds: clamped.round())),
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  Text(
+                    _fmt(duration),
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1653,6 +1733,29 @@ class _CoverThumb extends StatelessWidget {
                 ),
               ),
       ),
+    );
+  }
+}
+
+class _FloatingHero extends StatelessWidget {
+  final Widget child;
+  const _FloatingHero({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 22,
+            spreadRadius: 2,
+            offset: const Offset(0, 10),
+            color: Colors.black.withOpacity(0.45),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 }
