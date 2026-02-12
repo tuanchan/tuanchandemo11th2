@@ -1,5 +1,6 @@
 // logic.dart
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
@@ -159,17 +160,242 @@ class PlaybackStateRow {
 }
 
 /// ===============================
+/// Theme Config (A→Z palette) + persistence
+/// - Mục tiêu: "quét không chừa 1 cái nào" => gom toàn bộ màu/typography tokens
+/// - App.dart sẽ đọc themeConfig để build ThemeData (file app.dart anh bảo OK mới in)
+/// ===============================
+class ThemeConfig {
+  /// Keys chuẩn hoá để app.dart build ThemeData.
+  /// Anh có thể thêm key mới mà không phá backward-compat.
+  static const keys = <String>[
+    // Core
+    'primary',
+    'secondary',
+    'background',
+    'surface',
+    'card',
+    'divider',
+    'shadow',
+
+    // Text
+    'textPrimary',
+    'textSecondary',
+    'textTertiary',
+    'textOnPrimary',
+
+    // AppBar
+    'appBarBg',
+    'appBarFg',
+
+    // BottomNav
+    'bottomNavBg',
+    'bottomNavSelected',
+    'bottomNavUnselected',
+
+    // Buttons
+    'buttonBg',
+    'buttonFg',
+    'buttonTonalBg',
+    'buttonTonalFg',
+
+    // Inputs
+    'inputFill',
+    'inputBorder',
+    'inputHint',
+
+    // Icons
+    'iconPrimary',
+    'iconSecondary',
+
+    // Slider
+    'sliderActive',
+    'sliderInactive',
+    'sliderThumb',
+    'sliderOverlay',
+
+    // Dialog / Sheet
+    'dialogBg',
+    'sheetBg',
+
+    // SnackBar
+    'snackBg',
+    'snackFg',
+
+    // ListTile highlight/selection
+    'selectedRowBg',
+    'selectedRowFg',
+
+    // Visualizer bars
+    'visualizerBar',
+  ];
+
+  /// Typography knobs (mà anh nói “font chữ header...”).
+  /// Không đổi UI layout, chỉ đổi font family/weight/size tokens từ ThemeData.
+  final String? fontFamily;
+  final double? headerScale; // 1.0 default
+  final double? bodyScale; // 1.0 default
+
+  /// Palette lưu dưới dạng ARGB int.
+  final Map<String, int> colors;
+
+  const ThemeConfig({
+    required this.colors,
+    this.fontFamily,
+    this.headerScale,
+    this.bodyScale,
+  });
+
+  ThemeConfig copyWith({
+    Map<String, int>? colors,
+    String? fontFamily,
+    double? headerScale,
+    double? bodyScale,
+  }) {
+    return ThemeConfig(
+      colors: colors ?? this.colors,
+      fontFamily: fontFamily ?? this.fontFamily,
+      headerScale: headerScale ?? this.headerScale,
+      bodyScale: bodyScale ?? this.bodyScale,
+    );
+  }
+
+  Color getColor(String key, Color fallback) {
+    final v = colors[key];
+    if (v == null) return fallback;
+    return Color(v);
+  }
+
+  ThemeConfig setColor(String key, Color color) {
+    final next = Map<String, int>.from(colors);
+    next[key] = color.value;
+    return copyWith(colors: next);
+  }
+
+  ThemeConfig resetToDefaults({required bool darkDefault}) {
+    return ThemeConfig.defaults(darkDefault: darkDefault);
+  }
+
+  Map<String, Object?> toMap() => {
+        'colors': colors,
+        'fontFamily': fontFamily,
+        'headerScale': headerScale,
+        'bodyScale': bodyScale,
+      };
+
+  static ThemeConfig fromMap(Map<String, Object?> m) {
+    final rawColors = (m['colors'] as Map?) ?? const {};
+    final parsed = <String, int>{};
+    for (final e in rawColors.entries) {
+      final k = e.key.toString();
+      final v = e.value;
+      if (v is int) parsed[k] = v;
+      if (v is num) parsed[k] = v.toInt();
+      if (v is String) {
+        // allow hex strings accidentally stored
+        final s = v.trim();
+        final maybe = int.tryParse(
+          s.startsWith('0x') ? s.substring(2) : s,
+          radix: 16,
+        );
+        if (maybe != null) parsed[k] = maybe;
+      }
+    }
+    return ThemeConfig(
+      colors: parsed,
+      fontFamily: (m['fontFamily'] as String?)?.trim().isEmpty == true
+          ? null
+          : (m['fontFamily'] as String?),
+      headerScale: (m['headerScale'] as num?)?.toDouble(),
+      bodyScale: (m['bodyScale'] as num?)?.toDouble(),
+    );
+  }
+
+  static ThemeConfig defaults({required bool darkDefault}) {
+    // Base giống app.dart hiện tại: cam #FF4A00 + nền đen.
+    const orange = 0xFFFF4A00;
+    const black = 0xFF000000;
+    const white = 0xFFFFFFFF;
+
+    // Một số neutral gần giống anh đang dùng.
+    const cardDark = 0xFF1A1A1A;
+    const cardLight = 0xFFF6F6F6;
+    const dividerDark = 0x33FFFFFF;
+    const dividerLight = 0x1F000000;
+
+    final colors = <String, int>{
+      'primary': orange,
+      'secondary': orange,
+      'background': darkDefault ? black : white,
+      'surface': darkDefault ? black : white,
+      'card': darkDefault ? cardDark : cardLight,
+      'divider': darkDefault ? dividerDark : dividerLight,
+      'shadow': 0x73000000,
+      'textPrimary': darkDefault ? 0xFFFFFFFF : 0xFF000000,
+      'textSecondary': darkDefault ? 0xB3FFFFFF : 0x99000000,
+      'textTertiary': darkDefault ? 0x80FFFFFF : 0x66000000,
+      'textOnPrimary': 0xFFFFFFFF,
+      'appBarBg': darkDefault ? black : white,
+      'appBarFg': darkDefault ? 0xFFFFFFFF : 0xFF000000,
+      'bottomNavBg': darkDefault ? black : white,
+      'bottomNavSelected': orange,
+      'bottomNavUnselected': darkDefault ? 0xB3FFFFFF : 0x8A000000,
+      'buttonBg': orange,
+      'buttonFg': 0xFFFFFFFF,
+      'buttonTonalBg': darkDefault ? 0x1FFFF4A00 : 0x1AFF4A00,
+      'buttonTonalFg': orange,
+      'inputFill': darkDefault ? cardDark : cardLight,
+      'inputBorder': darkDefault ? 0x33FFFFFF : 0x22000000,
+      'inputHint': darkDefault ? 0x80FFFFFF : 0x66000000,
+      'iconPrimary': darkDefault ? 0xFFFFFFFF : 0xFF000000,
+      'iconSecondary': darkDefault ? 0xB3FFFFFF : 0x8A000000,
+      'sliderActive': orange,
+      'sliderInactive': darkDefault ? 0x3DFFFFFF : 0x42000000,
+      'sliderThumb': orange,
+      'sliderOverlay': 0x1FFF4A00,
+      'dialogBg': darkDefault ? cardDark : white,
+      'sheetBg': darkDefault ? cardDark : white,
+      'snackBg': darkDefault ? 0xFF202020 : 0xFF202020,
+      'snackFg': 0xFFFFFFFF,
+      'selectedRowBg': darkDefault ? 0x1AFF4A00 : 0x14FF4A00,
+      'selectedRowFg': darkDefault ? 0xFFFFFFFF : 0xFF000000,
+      'visualizerBar': darkDefault ? 0xFF9E9E9E : 0xFF616161,
+    };
+
+    // Ensure all keys exist (future-proof)
+    for (final k in keys) {
+      colors.putIfAbsent(k, () => orange);
+    }
+
+    return ThemeConfig(
+        colors: colors, fontFamily: null, headerScale: 1.0, bodyScale: 1.0);
+  }
+}
+
+/// ===============================
 /// Settings
 /// ===============================
 class AppSettings {
   final ThemeMode themeMode;
   final String appTitle;
 
-  const AppSettings({required this.themeMode, required this.appTitle});
+  /// Theme token map (A→Z), persisted.
+  final ThemeConfig themeConfig;
 
-  AppSettings copyWith({ThemeMode? themeMode, String? appTitle}) => AppSettings(
+  const AppSettings({
+    required this.themeMode,
+    required this.appTitle,
+    required this.themeConfig,
+  });
+
+  AppSettings copyWith({
+    ThemeMode? themeMode,
+    String? appTitle,
+    ThemeConfig? themeConfig,
+  }) =>
+      AppSettings(
         themeMode: themeMode ?? this.themeMode,
         appTitle: appTitle ?? this.appTitle,
+        themeConfig: themeConfig ?? this.themeConfig,
       );
 }
 
@@ -293,6 +519,9 @@ class AppLogic extends ChangeNotifier {
   static const _kPrefTheme = 'settings.themeMode';
   static const _kPrefTitle = 'settings.appTitle';
 
+  // NEW: theme config storage
+  static const _kPrefThemeConfig = 'settings.themeConfig.v1';
+
   late SharedPreferences _prefs;
   Database? _db;
 
@@ -303,8 +532,11 @@ class AppLogic extends ChangeNotifier {
   late Directory playlistDir;
   late Directory favoritesDir;
 
-  AppSettings settings =
-      const AppSettings(themeMode: ThemeMode.dark, appTitle: 'Local Player');
+  AppSettings settings = AppSettings(
+    themeMode: ThemeMode.dark,
+    appTitle: 'Local Player',
+    themeConfig: ThemeConfig.defaults(darkDefault: true),
+  );
 
   // Data in memory
   final List<TrackRow> library = [];
@@ -329,8 +561,9 @@ class AppLogic extends ChangeNotifier {
 
   // throttle save playback
   Timer? _saveTimer;
+
   Future<void> seekRelative(Duration delta) async {
-    final cur = position; // Duration hiện tại (anh đang dùng logic.position)
+    final cur = position; // Duration hiện tại
     final dur = currentDuration; // Duration tổng
 
     var next = cur + delta;
@@ -338,7 +571,7 @@ class AppLogic extends ChangeNotifier {
     if (next < Duration.zero) next = Duration.zero;
     if (next > dur) next = dur;
 
-    await seek(next); // hàm seek anh đã có: Future<void> seek(Duration)
+    await seek(next);
   }
 
   Future<void> init() async {
@@ -370,7 +603,8 @@ class AppLogic extends ChangeNotifier {
         androidNotificationOngoing: true,
       ),
     );
-    // Sync UI currentTrack theo MediaItem thật của player (fix lệch bài khi auto-next / playlist)
+
+    // Sync UI currentTrack theo MediaItem thật của player
     _mediaItemSub = handler.mediaItem.listen((mi) {
       if (mi == null) return;
       final id = mi.id;
@@ -382,26 +616,57 @@ class AppLogic extends ChangeNotifier {
       }
     });
 
-    // CRITICAL FIX: Don't auto-restore playback on init
-    // Just load the state flags but don't start playing
+    // Restore without autoplay
     await _restorePlaybackStateWithoutAutoPlay();
   }
 
   void _loadSettings() {
     final themeStr = _prefs.getString(_kPrefTheme) ?? 'dark';
     final titleStr = _prefs.getString(_kPrefTitle) ?? 'Local Player';
+
+    ThemeMode mode = switch (themeStr) {
+      'light' => ThemeMode.light,
+      'system' => ThemeMode.system,
+      _ => ThemeMode.dark,
+    };
+
+    // Theme config decode
+    ThemeConfig cfg;
+    final rawCfg = _prefs.getString(_kPrefThemeConfig);
+    if (rawCfg == null || rawCfg.trim().isEmpty) {
+      cfg = ThemeConfig.defaults(darkDefault: mode != ThemeMode.light);
+    } else {
+      try {
+        final m = jsonDecode(rawCfg) as Map<String, Object?>;
+        cfg = ThemeConfig.fromMap(m);
+
+        // If cfg is missing keys, patch with defaults
+        final patched = Map<String, int>.from(
+          ThemeConfig.defaults(darkDefault: mode != ThemeMode.light).colors,
+        );
+        patched.addAll(cfg.colors);
+        cfg = cfg.copyWith(colors: patched);
+
+        // Ensure scalars not null
+        cfg = cfg.copyWith(
+          headerScale: cfg.headerScale ?? 1.0,
+          bodyScale: cfg.bodyScale ?? 1.0,
+        );
+      } catch (_) {
+        cfg = ThemeConfig.defaults(darkDefault: mode != ThemeMode.light);
+      }
+    }
+
     settings = AppSettings(
-      themeMode: switch (themeStr) {
-        'light' => ThemeMode.light,
-        'system' => ThemeMode.system,
-        _ => ThemeMode.dark,
-      },
+      themeMode: mode,
       appTitle: titleStr,
+      themeConfig: cfg,
     );
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
     settings = settings.copyWith(themeMode: mode);
+
     await _prefs.setString(
       _kPrefTheme,
       switch (mode) {
@@ -410,6 +675,11 @@ class AppLogic extends ChangeNotifier {
         _ => 'dark'
       },
     );
+
+    // Optional: if user never touched themeConfig before, rebase defaults by mode.
+    // Nhưng KHÔNG tự reset nếu đã có custom.
+    // => Không làm gì thêm ở đây.
+
     notifyListeners();
   }
 
@@ -418,6 +688,60 @@ class AppLogic extends ChangeNotifier {
     settings = settings.copyWith(appTitle: t);
     await _prefs.setString(_kPrefTitle, settings.appTitle);
     notifyListeners();
+  }
+
+  /// ===============================
+  /// NEW: Theme Config APIs (A→Z)
+  /// - app.dart sẽ dùng settings.themeConfig để build ThemeData (không đổi UI layout)
+  /// ===============================
+  Future<void> setThemeColor(String key, Color color) async {
+    final cfg = settings.themeConfig.setColor(key, color);
+    settings = settings.copyWith(themeConfig: cfg);
+    await _persistThemeConfig();
+    notifyListeners();
+  }
+
+  Future<void> setFontFamily(String? fontFamily) async {
+    final ff = (fontFamily?.trim().isEmpty ?? true) ? null : fontFamily!.trim();
+    settings = settings.copyWith(
+      themeConfig: settings.themeConfig.copyWith(fontFamily: ff),
+    );
+    await _persistThemeConfig();
+    notifyListeners();
+  }
+
+  Future<void> setHeaderScale(double scale) async {
+    final s = scale.clamp(0.8, 1.6);
+    settings = settings.copyWith(
+      themeConfig: settings.themeConfig.copyWith(headerScale: s),
+    );
+    await _persistThemeConfig();
+    notifyListeners();
+  }
+
+  Future<void> setBodyScale(double scale) async {
+    final s = scale.clamp(0.8, 1.6);
+    settings = settings.copyWith(
+      themeConfig: settings.themeConfig.copyWith(bodyScale: s),
+    );
+    await _persistThemeConfig();
+    notifyListeners();
+  }
+
+  Future<void> resetThemeToDefaults({bool? darkDefault}) async {
+    final useDark = darkDefault ??
+        (settings.themeMode == ThemeMode.dark ||
+            settings.themeMode == ThemeMode.system);
+    settings = settings.copyWith(
+      themeConfig: ThemeConfig.defaults(darkDefault: useDark),
+    );
+    await _persistThemeConfig();
+    notifyListeners();
+  }
+
+  Future<void> _persistThemeConfig() async {
+    final raw = jsonEncode(settings.themeConfig.toMap());
+    await _prefs.setString(_kPrefThemeConfig, raw);
   }
 
   Future<void> _initFolders() async {
@@ -838,9 +1162,9 @@ class AppLogic extends ChangeNotifier {
 
   Future<void> playSegment(FavoriteSegment segment,
       {bool autoPlay = true}) async {
-    final track = library.firstWhere((t) => t.id == segment.trackId);
     final idx = library.indexWhere((t) => t.id == segment.trackId);
     if (idx < 0) return;
+    final track = library[idx];
 
     _current = track;
     final startPos = Duration(milliseconds: segment.startMs);
@@ -1096,8 +1420,7 @@ class AppLogic extends ChangeNotifier {
   }
 
   /// ===============================
-  /// CRITICAL FIX: Restore state without auto-playing
-  /// This prevents the white screen and unwanted auto-resume
+  /// Restore state without auto-playing
   /// ===============================
   Future<void> _restorePlaybackStateWithoutAutoPlay() async {
     final rows = await _db!.query('playback_state', where: 'k=1', limit: 1);

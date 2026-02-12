@@ -1,6 +1,7 @@
 // app.dart
+// app.dart - CẬP NHẬT: THEME CONFIG A→Z (đổi mọi màu/font), GIỮ NGUYÊN UI/LAYOUT,
+// VISUALIZER TO HƠN + STICKY HEROCARD
 
-// app.dart - CẬP NHẬT: VISUALIZER TO HƠN + STICKY HEROCARD
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -35,39 +36,230 @@ class _AppRootState extends State<AppRoot> {
 
   void _rebuild() => setState(() {});
 
-  static const _orange = Color(0xFFFF4A00);
-  static const _bg = Color(0xFF000000);
-
-  ThemeData _theme(bool dark) {
+  ThemeData _buildTheme({required bool dark, required ThemeConfig cfg}) {
     final base = dark ? ThemeData.dark() : ThemeData.light();
+
+    // Fallbacks theo dark/light
+    final fallback = ThemeConfig.defaults(darkDefault: dark);
+
+    Color c(String k, Color fb) => cfg.getColor(k, fb);
+    Color cf(String k) => cfg.getColor(k, fallback.getColor(k, Colors.pink));
+
+    final primary = cf('primary');
+    final secondary = cf('secondary');
+    final background = cf('background');
+    final surface = cf('surface');
+    final card = cf('card');
+    final divider = cf('divider');
+    final shadow = cf('shadow');
+
+    final textPrimary = cf('textPrimary');
+    final textSecondary = cf('textSecondary');
+    final textTertiary = cf('textTertiary');
+    final textOnPrimary = cf('textOnPrimary');
+
+    final appBarBg = cf('appBarBg');
+    final appBarFg = cf('appBarFg');
+
+    final bottomBg = cf('bottomNavBg');
+    final bottomSelected = cf('bottomNavSelected');
+    final bottomUnselected = cf('bottomNavUnselected');
+
+    final buttonBg = cf('buttonBg');
+    final buttonFg = cf('buttonFg');
+    final buttonTonalBg = cf('buttonTonalBg');
+    final buttonTonalFg = cf('buttonTonalFg');
+
+    final inputFill = cf('inputFill');
+    final inputBorder = cf('inputBorder');
+    final inputHint = cf('inputHint');
+
+    final iconPrimary = cf('iconPrimary');
+    final iconSecondary = cf('iconSecondary');
+
+    final sliderActive = cf('sliderActive');
+    final sliderInactive = cf('sliderInactive');
+    final sliderThumb = cf('sliderThumb');
+    final sliderOverlay = cf('sliderOverlay');
+
+    final dialogBg = cf('dialogBg');
+    final sheetBg = cf('sheetBg');
+
+    final snackBg = cf('snackBg');
+    final snackFg = cf('snackFg');
+
+    // Typography scaling (không đổi layout, chỉ scale font size token)
+    final headerScale = (cfg.headerScale ?? 1.0).clamp(0.8, 1.6);
+    final bodyScale = (cfg.bodyScale ?? 1.0).clamp(0.8, 1.6);
+
+    TextTheme _scaleTextTheme(TextTheme t) {
+      TextStyle? scale(TextStyle? s, double k) {
+        if (s == null) return null;
+        final fs = s.fontSize;
+        return s.copyWith(
+          fontSize: fs == null ? null : (fs * k),
+        );
+      }
+
+      // Header = title/display, Body = body/label
+      return t.copyWith(
+        displayLarge: scale(t.displayLarge, headerScale),
+        displayMedium: scale(t.displayMedium, headerScale),
+        displaySmall: scale(t.displaySmall, headerScale),
+        headlineLarge: scale(t.headlineLarge, headerScale),
+        headlineMedium: scale(t.headlineMedium, headerScale),
+        headlineSmall: scale(t.headlineSmall, headerScale),
+        titleLarge: scale(t.titleLarge, headerScale),
+        titleMedium: scale(t.titleMedium, headerScale),
+        titleSmall: scale(t.titleSmall, headerScale),
+        bodyLarge: scale(t.bodyLarge, bodyScale),
+        bodyMedium: scale(t.bodyMedium, bodyScale),
+        bodySmall: scale(t.bodySmall, bodyScale),
+        labelLarge: scale(t.labelLarge, bodyScale),
+        labelMedium: scale(t.labelMedium, bodyScale),
+        labelSmall: scale(t.labelSmall, bodyScale),
+      );
+    }
+
+    final baseText = base.textTheme.apply(
+      bodyColor: textPrimary,
+      displayColor: textPrimary,
+    );
+
+    final textTheme = _scaleTextTheme(baseText).copyWith(
+      bodySmall:
+          _scaleTextTheme(baseText).bodySmall?.copyWith(color: textSecondary),
+      bodyMedium:
+          _scaleTextTheme(baseText).bodyMedium?.copyWith(color: textPrimary),
+      bodyLarge:
+          _scaleTextTheme(baseText).bodyLarge?.copyWith(color: textPrimary),
+    );
+
     return base.copyWith(
-      scaffoldBackgroundColor: dark ? _bg : Colors.white,
-      colorScheme:
-          base.colorScheme.copyWith(primary: _orange, secondary: _orange),
-      appBarTheme: AppBarTheme(
-        backgroundColor: dark ? _bg : Colors.white,
-        foregroundColor: dark ? Colors.white : Colors.black,
-        elevation: 0,
+      useMaterial3: true,
+      fontFamily:
+          (cfg.fontFamily?.trim().isEmpty ?? true) ? null : cfg.fontFamily,
+
+      scaffoldBackgroundColor: background,
+
+      colorScheme: base.colorScheme.copyWith(
+        primary: primary,
+        secondary: secondary,
+        surface: surface,
       ),
+
+      // AppBar
+      appBarTheme: AppBarTheme(
+        backgroundColor: appBarBg,
+        foregroundColor: appBarFg,
+        elevation: 0,
+        iconTheme: IconThemeData(color: appBarFg),
+        titleTextStyle: (textTheme.titleLarge ?? const TextStyle()).copyWith(
+          color: appBarFg,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+
+      // Bottom nav
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: dark ? _bg : Colors.white,
-        selectedItemColor: _orange,
-        unselectedItemColor: dark ? Colors.white70 : Colors.black54,
+        backgroundColor: bottomBg,
+        selectedItemColor: bottomSelected,
+        unselectedItemColor: bottomUnselected,
         type: BottomNavigationBarType.fixed,
       ),
-      sliderTheme: base.sliderTheme.copyWith(
-        activeTrackColor: _orange,
-        thumbColor: _orange,
-        overlayColor: _orange.withOpacity(0.12),
-        inactiveTrackColor: dark ? Colors.white24 : Colors.black26,
-      ),
+
+      // Cards
       cardTheme: CardThemeData(
-        color: dark ? const Color(0xFF1A1A1A) : const Color(0xFFF6F6F6),
+        color: card,
         elevation: 0,
+        shadowColor: shadow,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
+
+      // Divider
+      dividerTheme: DividerThemeData(
+        color: divider,
+        thickness: 1,
+        space: 1,
+      ),
+
+      // Icon
+      iconTheme: IconThemeData(color: iconPrimary),
+      primaryIconTheme: IconThemeData(color: iconPrimary),
+
+      // Slider
+      sliderTheme: base.sliderTheme.copyWith(
+        activeTrackColor: sliderActive,
+        thumbColor: sliderThumb,
+        overlayColor: sliderOverlay,
+        inactiveTrackColor: sliderInactive,
+      ),
+
+      // Inputs (TextField, Search)
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: inputFill,
+        hintStyle: TextStyle(color: inputHint),
+        prefixIconColor: iconSecondary,
+        suffixIconColor: iconSecondary,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: inputBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: primary, width: 1.2),
+        ),
+      ),
+
+      // Dialogs
       dialogTheme: DialogThemeData(
+        backgroundColor: dialogBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        titleTextStyle: (textTheme.titleMedium ?? const TextStyle()).copyWith(
+          color: textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        contentTextStyle: (textTheme.bodyMedium ?? const TextStyle()).copyWith(
+          color: textSecondary,
+        ),
+      ),
+
+      // Sheets (chủ yếu set backgroundColor tại showModalBottomSheet)
+      // -> vẫn giữ token để app dùng
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: sheetBg,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+      ),
+
+      // Buttons
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: buttonBg,
+          foregroundColor: buttonFg,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: primary,
+        ),
+      ),
+
+      // SnackBar
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: snackBg,
+        contentTextStyle: TextStyle(color: snackFg),
+        actionTextColor: primary,
+      ),
+
+      // Text theme
+      textTheme: textTheme.copyWith(
+        titleLarge: textTheme.titleLarge?.copyWith(color: textPrimary),
+        titleMedium: textTheme.titleMedium?.copyWith(color: textPrimary),
+        titleSmall: textTheme.titleSmall?.copyWith(color: textPrimary),
+        bodySmall: textTheme.bodySmall?.copyWith(color: textSecondary),
       ),
     );
   }
@@ -75,10 +267,15 @@ class _AppRootState extends State<AppRoot> {
   @override
   Widget build(BuildContext context) {
     final logic = widget.logic;
+
+    // ThemeConfig dùng chung, build 2 theme (light/dark) nhưng vẫn theo token của user.
+    // Nếu user đang dùng ThemeMode.dark => lấy defaults(dark) làm fallback.
+    final cfg = logic.settings.themeConfig;
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: _theme(false),
-      darkTheme: _theme(true),
+      theme: _buildTheme(dark: false, cfg: cfg),
+      darkTheme: _buildTheme(dark: true, cfg: cfg),
       themeMode: logic.settings.themeMode,
       home: _Shell(
         logic: logic,
@@ -147,10 +344,8 @@ class _Shell extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardTheme.color,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: Theme.of(context).bottomSheetTheme.shape,
       builder: (_) => _NowPlayingSheet(logic: logic),
     );
   }
@@ -193,8 +388,7 @@ class _HomePageState extends State<_HomePage> {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                 child: Container(
-                  color: const Color.fromARGB(
-                      0, 255, 255, 255), // ✅ bỏ nền đen, để card tự "lơ lửng"
+                  color: Colors.transparent,
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
                   child: _FloatingHero(child: _HeroCard(logic: widget.logic)),
                 ),
@@ -221,11 +415,6 @@ class _HomePageState extends State<_HomePage> {
                         },
                       )
                     : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: Theme.of(context).cardColor,
               ),
               onChanged: (value) {
                 setState(() {
@@ -325,6 +514,13 @@ class _HomePageState extends State<_HomePage> {
                               child: _AudioVisualizer(
                                 isPlaying: widget
                                     .logic.handler.playbackState.value.playing,
+                                barColor: Color(widget.logic.settings
+                                        .themeConfig.colors['visualizerBar'] ??
+                                    Theme.of(context)
+                                        .colorScheme
+                                        .primary
+                                        .withOpacity(0.7)
+                                        .value),
                               ),
                             ),
                           IconButton(
@@ -353,10 +549,8 @@ class _HomePageState extends State<_HomePage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardTheme.color,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: Theme.of(context).bottomSheetTheme.shape,
       builder: (_) => _NowPlayingSheet(logic: logic),
     );
   }
@@ -370,9 +564,6 @@ class _StickyHeroDelegate extends SliverPersistentHeaderDelegate {
 
   _StickyHeroDelegate({required this.child});
 
-  // ✅ FIX: Tăng lên 100 để đủ chỗ cho Card + padding trên mọi thiết bị
-  // Công thức: padding(top 8 + bottom 4) + Card(padding 12*2 + cover 54) = 102
-  // Dùng 104 để thêm chút buffer an toàn
   @override
   double get minExtent => 132;
 
@@ -470,26 +661,30 @@ class _HeroCard extends StatelessWidget {
     final artist = t?.artist ?? '';
     final playing = logic.handler.playbackState.value.playing;
 
+    final textSecondary = Color(
+      logic.settings.themeConfig.colors['textSecondary'] ??
+          Theme.of(context).textTheme.bodySmall?.color?.value ??
+          Colors.white70.value,
+    );
+
     return Card(
-      margin: EdgeInsets.zero, // <-- thêm
+      margin: EdgeInsets.zero,
       child: Padding(
-        // ✅ FIX: Giảm padding từ 16 → 12 để vừa với chiều cao delegate 104
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
-            // ✅ FIX: Giảm size cover từ 54 → 48 để tránh overflow
             _CoverThumb(path: t?.coverPath, title: title, size: 48),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min, // ✅ FIX: thêm mainAxisSize.min
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 2), // ✅ FIX: Giảm từ 4 → 2
+                  const SizedBox(height: 2),
                   Text(
                     artist,
                     maxLines: 1,
@@ -497,21 +692,22 @@ class _HeroCard extends StatelessWidget {
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(color: Colors.white70),
+                        ?.copyWith(color: textSecondary),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            // ✨ AUDIO VISUALIZER (CHỈ HIỆN KHI ĐANG PHÁT)
-            _AudioVisualizer(isPlaying: playing),
-            // ✅ FIX: Xoá SizedBox(width: 8) giữa visualizer và button
-            // để tiết kiệm chiều rộng, tránh overflow dọc do Row bị ép
+            _AudioVisualizer(
+              isPlaying: playing,
+              barColor: Color(
+                  logic.settings.themeConfig.colors['visualizerBar'] ??
+                      Colors.grey.value),
+            ),
             IconButton(
               onPressed: () async => await logic.playPause(),
               icon: Icon(
                   playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-              // ✅ FIX: padding nhỏ hơn để vừa với chiều cao
               padding: const EdgeInsets.all(8),
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
@@ -527,7 +723,8 @@ class _HeroCard extends StatelessWidget {
 /// ===============================
 class _AudioVisualizer extends StatefulWidget {
   final bool isPlaying;
-  const _AudioVisualizer({required this.isPlaying});
+  final Color barColor;
+  const _AudioVisualizer({required this.isPlaying, required this.barColor});
 
   @override
   State<_AudioVisualizer> createState() => _AudioVisualizerState();
@@ -621,7 +818,7 @@ class _AudioVisualizerState extends State<_AudioVisualizer>
                   width: 4,
                   height: barHeights[index] * _animations[index].value,
                   decoration: BoxDecoration(
-                    color: Colors.grey,
+                    color: widget.barColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 );
@@ -651,28 +848,22 @@ class _SeekStepButton extends StatelessWidget {
     final isRewind = seconds < 0;
     final s = seconds.abs();
 
-    // iOS-ish: gobackward/goforward
     IconData icon;
     if (isRewind) {
-      icon =
-          (s == 5) ? Icons.replay_5_rounded : Icons.replay_rounded; // fallback
+      icon = (s == 5) ? Icons.replay_5_rounded : Icons.replay_rounded;
     } else {
-      icon = (s == 5)
-          ? Icons.forward_5_rounded
-          : Icons.forward_rounded; // fallback
+      icon = (s == 5) ? Icons.forward_5_rounded : Icons.forward_rounded;
     }
 
     return IconButton(
       tooltip: isRewind ? 'Tua lùi ${s}s' : 'Tua tới ${s}s',
       onPressed: onPressed,
       iconSize: 30,
-      splashRadius: 22, // cảm giác iOS hơn
+      splashRadius: 22,
       icon: Icon(icon),
     );
   }
 }
-
-// ... CÁC PHẦN CÒN LẠI GIỮ NGUYÊN NHƯ CŨ ...
 
 class _FavoritesPage extends StatelessWidget {
   final AppLogic logic;
@@ -729,9 +920,8 @@ class _FavoritesPage extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardTheme.color,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: Theme.of(context).bottomSheetTheme.shape,
       builder: (_) => _NowPlayingSheet(logic: logic),
     );
   }
@@ -832,9 +1022,8 @@ class _PlaylistsPage extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardTheme.color,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: Theme.of(context).bottomSheetTheme.shape,
       builder: (_) => isSpecial
           ? _FavoriteSegmentsSheet(logic: logic)
           : _PlaylistSheet(logic: logic, playlistId: playlistId, name: name),
@@ -865,7 +1054,7 @@ class _PlaylistSheet extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Column(
                 children: [
-                  _handleBar(),
+                  _handleBar(context),
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -949,12 +1138,14 @@ class _PlaylistSheet extends StatelessWidget {
     );
   }
 
-  Widget _handleBar() {
+  Widget _handleBar(BuildContext context) {
+    final c = Color(
+        logic.settings.themeConfig.colors['divider'] ?? Colors.white24.value);
     return Container(
       width: 40,
       height: 4,
-      decoration: BoxDecoration(
-          color: Colors.white24, borderRadius: BorderRadius.circular(999)),
+      decoration:
+          BoxDecoration(color: c, borderRadius: BorderRadius.circular(999)),
     );
   }
 
@@ -962,9 +1153,8 @@ class _PlaylistSheet extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardTheme.color,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: Theme.of(context).bottomSheetTheme.shape,
       builder: (_) => _NowPlayingSheet(logic: logic),
     );
   }
@@ -1075,6 +1265,11 @@ class _FavoriteSegmentsSheet extends StatelessWidget {
   }
 }
 
+/// ===============================
+/// SETTINGS - THÊM “THEME A→Z” (đổi mọi token màu + font)
+/// GIỮ NGUYÊN layout phần Setting hiện có (theme mode + title),
+/// chỉ THÊM 1 Card mới phía dưới.
+/// ===============================
 class _SettingsPage extends StatefulWidget {
   final AppLogic logic;
   const _SettingsPage({required this.logic});
@@ -1086,26 +1281,36 @@ class _SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<_SettingsPage> {
   late final TextEditingController _titleCtrl;
 
+  // NEW: font family + sliders
+  late final TextEditingController _fontCtrl;
+
   @override
   void initState() {
     super.initState();
     _titleCtrl = TextEditingController(text: widget.logic.settings.appTitle);
+    _fontCtrl = TextEditingController(
+        text: widget.logic.settings.themeConfig.fontFamily ?? '');
   }
 
   @override
   void dispose() {
     _titleCtrl.dispose();
+    _fontCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final logic = widget.logic;
+    final cfg = logic.settings.themeConfig;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
         Text('Setting', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
+
+        // Theme mode card (giữ nguyên)
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1143,7 +1348,10 @@ class _SettingsPageState extends State<_SettingsPage> {
             ),
           ),
         ),
+
         const SizedBox(height: 12),
+
+        // App title card (giữ nguyên)
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1164,8 +1372,6 @@ class _SettingsPageState extends State<_SettingsPage> {
                   controller: _titleCtrl,
                   decoration: const InputDecoration(
                     hintText: 'Nhập title...',
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(14))),
                   ),
                   onSubmitted: (v) => logic.setAppTitle(v),
                 ),
@@ -1178,6 +1384,240 @@ class _SettingsPageState extends State<_SettingsPage> {
                 ),
               ],
             ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // NEW: Theme A→Z card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.palette_rounded),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Màu sắc & Font (A → Z)',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final useDark =
+                            (logic.settings.themeMode == ThemeMode.dark) ||
+                                (logic.settings.themeMode == ThemeMode.system);
+                        await logic.resetThemeToDefaults(darkDefault: useDark);
+                        // update local font controller
+                        _fontCtrl.text =
+                            logic.settings.themeConfig.fontFamily ?? '';
+                        setState(() {});
+                      },
+                      child: const Text('Reset'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Font family input
+                Row(
+                  children: [
+                    const Icon(Icons.font_download_rounded, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _fontCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'Font family (để trống = mặc định)',
+                        ),
+                        onSubmitted: (v) async {
+                          await logic.setFontFamily(v);
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.tonal(
+                      onPressed: () async {
+                        await logic.setFontFamily(_fontCtrl.text);
+                        setState(() {});
+                      },
+                      child: const Text('Áp'),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // Header scale
+                _scaleRow(
+                  context,
+                  icon: Icons.text_fields_rounded,
+                  title: 'Header scale',
+                  value: (cfg.headerScale ?? 1.0).clamp(0.8, 1.6),
+                  onChanged: (v) async {
+                    await logic.setHeaderScale(v);
+                    setState(() {});
+                  },
+                ),
+                const SizedBox(height: 8),
+
+                // Body scale
+                _scaleRow(
+                  context,
+                  icon: Icons.subject_rounded,
+                  title: 'Body scale',
+                  value: (cfg.bodyScale ?? 1.0).clamp(0.8, 1.6),
+                  onChanged: (v) async {
+                    await logic.setBodyScale(v);
+                    setState(() {});
+                  },
+                ),
+
+                const SizedBox(height: 14),
+                Divider(color: Theme.of(context).dividerTheme.color),
+
+                const SizedBox(height: 10),
+                Text(
+                  'Đổi màu từng phần tử (nhấn vào ô màu):',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 10),
+
+                // Grid color tokens
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: ThemeConfig.keys.map((k) {
+                    final col =
+                        Color(cfg.colors[k] ?? Colors.transparent.value);
+                    return _ColorToken(
+                      label: k,
+                      color: col,
+                      onTap: () async {
+                        final picked = await _pickColor(context, col);
+                        if (picked != null) {
+                          await logic.setThemeColor(k, picked);
+                          setState(() {});
+                        }
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _scaleRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required double value,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(title)),
+        SizedBox(
+          width: 160,
+          child: Slider(
+            min: 0.8,
+            max: 1.6,
+            value: value,
+            onChanged: (v) => onChanged(v),
+          ),
+        ),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: 42,
+          child: Text(
+            value.toStringAsFixed(2),
+            textAlign: TextAlign.right,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<Color?> _pickColor(BuildContext context, Color initial) async {
+    // UI tối giản: RGB sliders + preview (không thêm package, giữ project gọn)
+    double r = initial.red.toDouble();
+    double g = initial.green.toDouble();
+    double b = initial.blue.toDouble();
+    double a = initial.alpha.toDouble();
+
+    return showDialog<Color>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final col =
+              Color.fromARGB(a.round(), r.round(), g.round(), b.round());
+          return AlertDialog(
+            title: const Text('Chọn màu'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: col,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _rgbSlider(ctx, 'A', a, (v) => setSt(() => a = v)),
+                _rgbSlider(ctx, 'R', r, (v) => setSt(() => r = v)),
+                _rgbSlider(ctx, 'G', g, (v) => setSt(() => g = v)),
+                _rgbSlider(ctx, 'B', b, (v) => setSt(() => b = v)),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Huỷ'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, col),
+                child: const Text('Chọn'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _rgbSlider(BuildContext context, String label, double v,
+      ValueChanged<double> onChanged) {
+    return Row(
+      children: [
+        SizedBox(width: 16, child: Text(label)),
+        Expanded(
+          child: Slider(
+            min: 0,
+            max: 255,
+            value: v.clamp(0, 255),
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(
+            v.round().toString(),
+            textAlign: TextAlign.right,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ),
       ],
@@ -1211,6 +1651,60 @@ class _SettingsPageState extends State<_SettingsPage> {
   }
 }
 
+/// Token tile
+class _ColorToken extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ColorToken({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final border = Theme.of(context).dividerColor;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 152,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: border),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const Icon(Icons.edit_rounded, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _NowPlayingSheet extends StatefulWidget {
   final AppLogic logic;
   const _NowPlayingSheet({required this.logic});
@@ -1230,10 +1724,8 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardTheme.color,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: Theme.of(context).bottomSheetTheme.shape,
       builder: (_) => SafeArea(
         child: Padding(
           padding: EdgeInsets.fromLTRB(
@@ -1249,7 +1741,7 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: Theme.of(context).dividerColor,
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
@@ -1291,9 +1783,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
 
     final fav = track != null && logic.favorites.contains(track.id);
 
-    final pls =
-        track == null ? <PlaylistRow>[] : logic.playlistsContaining(track.id);
-
     return SafeArea(
       child: SizedBox(
         height: MediaQuery.of(context).size.height * 0.9,
@@ -1303,7 +1792,7 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Column(
                 children: [
-                  _handleBar(),
+                  _handleBar(context),
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -1351,10 +1840,10 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
                     Text(artist,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(color: Colors.white70),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Color(logic.settings.themeConfig
+                                    .colors['textSecondary'] ??
+                                Colors.white70.value)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 12),
@@ -1363,7 +1852,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // SKIP PREVIOUS
                         IconButton(
                           tooltip: 'Previous',
                           onPressed: () async => await logic.previous(),
@@ -1371,7 +1859,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                           icon: const Icon(Icons.skip_previous_rounded),
                         ),
                         const SizedBox(width: 4),
-                        // ✨ TUA LÙI 5 GIÂY
                         _SeekStepButton(
                           seconds: -5,
                           onPressed: track == null
@@ -1380,7 +1867,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                                   .seekRelative(const Duration(seconds: -5)),
                         ),
                         const SizedBox(width: 8),
-                        // PLAY / PAUSE
                         FilledButton(
                           style: FilledButton.styleFrom(
                             padding: const EdgeInsets.all(16),
@@ -1394,7 +1880,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                               size: 32),
                         ),
                         const SizedBox(width: 8),
-                        // ✨ TUA TIẾN 5 GIÂY
                         _SeekStepButton(
                           seconds: 5,
                           onPressed: track == null
@@ -1403,7 +1888,6 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                                   .seekRelative(const Duration(seconds: 5)),
                         ),
                         const SizedBox(width: 4),
-                        // SKIP NEXT
                         IconButton(
                           tooltip: 'Next',
                           onPressed: () async => await logic.next(),
@@ -1426,7 +1910,9 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                               : Icons.favorite_border_rounded),
                           color: fav
                               ? Theme.of(context).colorScheme.primary
-                              : Colors.white70,
+                              : Color(logic.settings.themeConfig
+                                      .colors['iconSecondary'] ??
+                                  Colors.white70.value),
                         ),
                         IconButton(
                           tooltip: 'Loop one',
@@ -1434,7 +1920,9 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
                           icon: Icon(Icons.repeat_one_rounded,
                               color: logic.loopOne
                                   ? Theme.of(context).colorScheme.primary
-                                  : Colors.white70),
+                                  : Color(logic.settings.themeConfig
+                                          .colors['iconSecondary'] ??
+                                      Colors.white70.value)),
                         ),
                       ],
                     ),
@@ -1688,12 +2176,13 @@ class _NowPlayingSheetState extends State<_NowPlayingSheet> {
     );
   }
 
-  Widget _handleBar() {
+  Widget _handleBar(BuildContext context) {
+    final c = Theme.of(context).dividerColor;
     return Container(
       width: 40,
       height: 4,
-      decoration: BoxDecoration(
-          color: Colors.white24, borderRadius: BorderRadius.circular(999)),
+      decoration:
+          BoxDecoration(color: c, borderRadius: BorderRadius.circular(999)),
     );
   }
 
@@ -1749,6 +2238,8 @@ class _FloatingHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // shadow color có token nhưng không ép vì UI này là "floating",
+    // vẫn lấy từ themeConfig đã map vào CardTheme.shadowColor.
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
@@ -1757,7 +2248,8 @@ class _FloatingHero extends StatelessWidget {
             blurRadius: 22,
             spreadRadius: 2,
             offset: const Offset(0, 10),
-            color: Colors.black.withOpacity(0.45),
+            color: Theme.of(context).cardTheme.shadowColor ??
+                Colors.black.withOpacity(0.45),
           ),
         ],
       ),
