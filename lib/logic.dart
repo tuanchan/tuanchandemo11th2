@@ -1763,46 +1763,56 @@ class AppLogic extends ChangeNotifier {
   /// BACKUP → EXPORT ZIP
   /// ===============================
   Future<String?> exportLibraryToZip() async {
+  final tmpDir = await getTemporaryDirectory();
+  final exportPath = p.join(
+    tmpDir.path,
+    'backup_${DateTime.now().millisecondsSinceEpoch}.zip',
+  );
+
+  try {
+    final root = Directory(_rootDir.path);
+    if (!await root.exists()) return 'Không tìm thấy dữ liệu';
+
+    // ✅ STREAMING: ZipFileEncoder ghi thẳng ra file, không buffer vào RAM
+    final encoder = ZipFileEncoder();
+    encoder.create(exportPath);
+
     try {
-      final archive = Archive();
-
-      final root = Directory(_rootDir.path);
-      if (!await root.exists()) return 'Không tìm thấy dữ liệu';
-
       final files = root.listSync(recursive: true, followLinks: false);
 
       for (final f in files) {
-        if (f is File) {
-          // ✅ FIX 1: Bỏ qua các file .zip cũ trong rootDir (tránh zip chứa chính nó)
-          final ext = p.extension(f.path).toLowerCase();
-          if (ext == '.zip') continue;
+        if (f is! File) continue;
 
-          // ✅ FIX 2: Bỏ qua restore lock nếu còn sót
-          final name = p.basename(f.path);
-          if (name == '.restore_lock') continue;
+        final ext = p.extension(f.path).toLowerCase();
+        if (ext == '.zip') continue;
 
-          final rel = p.relative(f.path, from: _rootDir.path);
-          final bytes = await f.readAsBytes();
-          archive.addFile(ArchiveFile(rel, bytes.length, bytes));
-        }
+        final name = p.basename(f.path);
+        if (name == '.restore_lock') continue;
+
+        final rel = p.relative(f.path, from: _rootDir.path);
+
+        // ✅ addFile dùng InputFileStream bên trong -> không load hết vào RAM
+        encoder.addFile(f, rel);
       }
-
-      final zipData = ZipEncoder().encode(archive);
-      if (zipData == null) return 'Không thể tạo file zip';
-
-      // ✅ FIX 3: Lưu zip ra NGOÀI rootDir (temp rồi share, không lưu trong rootDir)
-      final tmpDir = await getTemporaryDirectory();
-      final exportPath = p.join(
-        tmpDir.path,
-        'backup_${DateTime.now().millisecondsSinceEpoch}.zip',
-      );
-
-      await File(exportPath).writeAsBytes(zipData);
-      return exportPath;
-    } catch (e) {
-      return e.toString();
+    } finally {
+      encoder.close();
     }
+
+    // Verify output tồn tại
+    if (!await File(exportPath).exists()) {
+      return 'Không thể tạo file zip';
+    }
+
+    return exportPath;
+  } catch (e) {
+    // Cleanup nếu lỗi
+    try {
+      final out = File(exportPath);
+      if (await out.exists()) await out.delete();
+    } catch (_) {}
+    return e.toString();
   }
+}
 
   /// ===============================
   /// RESTORE → IMPORT ZIP
@@ -1810,39 +1820,47 @@ class AppLogic extends ChangeNotifier {
   /// ===============================
   /// RESTORE → IMPORT ZIP (FIX: đóng DB/player trước khi xoá rootDir để tránh crash/white screen)
   /// ===============================
-  Future<String?> importLibraryFromZip() async {
-    File? lock;
-    Directory? tmpDir;
-    Directory? oldDir;
+  /// ===============================
+/// RESTORE → IMPORT ZIP (STREAMING - chịu 1GB+)
+/// ===============================
+Future<String?> importLibraryFromZip() async {
+  Directory? tmpDir;
+  Directory? oldDir;
 
+  try {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['zip'],
+      allowMultiple: false,
+    );
+
+    if (res == null || res.files.isEmpty) return 'Đã huỷ';
+    final zipPath = res.files.first.path;
+    if (zipPath == null) return 'File không hợp lệ';
+
+    // 1) Teardown runtime
+    await _teardownBeforeRestore();
+
+    // 2) Lock
+    final lockFile = File(p.join(_rootDir.path, '.restore_lock'));
     try {
-      final res = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['zip'],
-        allowMultiple: false,
-      );
+      await _rootDir.create(recursive: true);
+      await lockFile.writeAsString(DateTime.now().toIso8601String());
+    } catch (_) {}
 
-      if (res == null || res.files.isEmpty) return 'Đã huỷ';
-      final zipPath = res.files.first.path;
-      if (zipPath == null) return 'File không hợp lệ';
+    // 3) Prepare tmpDir
+    final parent = Directory(p.dirname(_rootDir.path));
+    tmpDir = Directory(p.join(parent.path, 'AppMusicVol2_tmp_restore'));
+    if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
+    await tmpDir.create(recursive: true);
 
-      await _teardownBeforeRestore();
+    // 4) STREAMING extract: dùng InputFileStream + decodeBuffer
+    //    Không load toàn bộ ZIP vào RAM
+    final pathRemap = <String, String>{};
 
-      lock = File(p.join(_rootDir.path, '.restore_lock'));
-      try {
-        await lock.writeAsString(DateTime.now().toIso8601String());
-      } catch (_) {}
-
-      final bytes = await File(zipPath).readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
-
-      final parent = Directory(p.dirname(_rootDir.path));
-      tmpDir = Directory(p.join(parent.path, 'AppMusicVol2_tmp_restore'));
-      if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
-      await tmpDir.create(recursive: true);
-
-      // ✅ FIX: Map old localPath -> new localPath để patch DB sau
-      final pathRemap = <String, String>{}; // oldRelPath -> newRelPath
+    final inputStream = InputFileStream(zipPath);
+    try {
+      final archive = ZipDecoder().decodeBuffer(inputStream);
 
       for (final file in archive) {
         if (!file.isFile) {
@@ -1852,88 +1870,129 @@ class AppLogic extends ChangeNotifier {
         }
 
         String outRelPath = file.name;
-        String outPath = p.join(tmpDir.path, outRelPath);
 
-        // ✅ FIX: Nếu là file audio (trong thư mục Audio/) thì đổi tên = id + ext
-        // để tránh lỗi -11800 do tên file unicode/space trên iOS AVFoundation
-        final isAudio =
-            outRelPath.startsWith('Audio/') || outRelPath.startsWith('Audio\\');
+        // Đổi tên file audio = id + ext để tránh lỗi -11800
+        final isAudio = outRelPath.startsWith('Audio/') ||
+            outRelPath.startsWith('Audio\\');
         if (isAudio) {
           final ext = p.extension(file.name).toLowerCase();
           if (ext == '.mp3' || ext == '.m4a') {
-            // Lấy id từ tên file cũ nếu có (format: id_safeName.ext hoặc id.ext)
-            final baseName = p.basenameWithoutExtension(p.basename(file.name));
-            // Thử extract id = phần trước dấu '_' đầu tiên
+            final baseName =
+                p.basenameWithoutExtension(p.basename(file.name));
             final underscoreIdx = baseName.indexOf('_');
             final id = underscoreIdx > 0
                 ? baseName.substring(0, underscoreIdx)
                 : baseName;
-
             final newRelPath = 'Audio/$id$ext';
             if (newRelPath != outRelPath) {
               pathRemap[outRelPath] = newRelPath;
               outRelPath = newRelPath;
-              outPath = p.join(tmpDir.path, outRelPath);
             }
           }
         }
 
+        final outPath = p.join(tmpDir.path, outRelPath);
         final outFile = File(outPath);
         await outFile.create(recursive: true);
-        await outFile.writeAsBytes(file.content as List<int>);
-      }
 
-      // ✅ FIX: Patch app.db bên trong tmpDir để update localPath theo pathRemap
-      if (pathRemap.isNotEmpty) {
-        await _patchDbAfterRestore(tmpDir.path, pathRemap);
-      }
-
-      oldDir = Directory(p.join(parent.path, 'AppMusicVol2_old_backup'));
-      if (await oldDir.exists()) await oldDir.delete(recursive: true);
-
-      if (await _rootDir.exists()) {
-        await _rootDir.rename(oldDir.path);
-      }
-
-      await tmpDir.rename(_rootDir.path);
-
-      try {
-        final lockNow = File(p.join(_rootDir.path, '.restore_lock'));
-        if (await lockNow.exists()) await lockNow.delete();
-      } catch (_) {}
-
-      await _initFolders();
-      await _initDb();
-
-      // ✅ FIX: Rebuild absolute paths trước (Documents path có thể thay đổi trên iOS)
-      await _rebuildAbsolutePathsAfterRestore();
-
-      await _loadAllFromDb();
-      await _removeTracksWithMissingFiles();
-
-      if (library.isNotEmpty) {
-        await setCurrent(library.first.id, autoPlay: false);
-        await handler.pause();
-      }
-
-      try {
-        if (oldDir != null && await oldDir.exists()) {
-          await oldDir.delete(recursive: true);
+        // ✅ STREAMING: writeContent dùng OutputFileStream -> không buffer vào RAM
+        final outputStream = OutputFileStream(outPath);
+        try {
+          file.writeContent(outputStream);
+        } finally {
+          await outputStream.close();
         }
-      } catch (_) {}
-
-      notifyListeners();
-      return null;
-    } catch (e) {
-      return e.toString();
+      }
     } finally {
+      await inputStream.close();
+    }
+
+    // 5) Patch DB trong tmpDir
+    if (pathRemap.isNotEmpty) {
+      await _patchDbAfterRestore(tmpDir.path, pathRemap);
+    }
+
+    // 6) Atomic swap với fallback copy nếu rename fail (cross-volume trên iOS)
+    oldDir = Directory(p.join(parent.path, 'AppMusicVol2_old_backup'));
+    if (await oldDir.exists()) await oldDir.delete(recursive: true);
+
+    if (await _rootDir.exists()) {
+      // Thử rename trước (nhanh)
       try {
-        if (tmpDir != null && await tmpDir.exists()) {
-          await tmpDir.delete(recursive: true);
-        }
-      } catch (_) {}
+        await _rootDir.rename(oldDir.path);
+      } catch (_) {
+        // Fallback: copy rồi delete (cross-volume)
+        await _copyDir(_rootDir, oldDir);
+        await _rootDir.delete(recursive: true);
+      }
+    }
+
+    // Thử rename tmpDir -> rootDir
+    try {
+      await tmpDir.rename(_rootDir.path);
+    } catch (_) {
+      // Fallback: copy
+      await _copyDir(tmpDir, _rootDir);
+      await tmpDir.delete(recursive: true);
+    }
+
+    // tmpDir đã được rename/copy -> đặt null để finally không xoá nhầm
+    tmpDir = null;
+
+    // 7) Xoá lock
+    try {
+      final lockNow = File(p.join(_rootDir.path, '.restore_lock'));
+      if (await lockNow.exists()) await lockNow.delete();
+    } catch (_) {}
+
+    // 8) Re-init
+    await _initFolders();
+    await _initDb();
+    await _rebuildAbsolutePathsAfterRestore();
+    await _loadAllFromDb();
+    await _removeTracksWithMissingFiles();
+
+    if (library.isNotEmpty) {
+      await setCurrent(library.first.id, autoPlay: false);
+      await handler.pause();
+    }
+
+    // 9) Cleanup old
+    try {
+      if (oldDir != null && await oldDir.exists()) {
+        await oldDir.delete(recursive: true);
+      }
+    } catch (_) {}
+
+    notifyListeners();
+    return null;
+  } catch (e) {
+    return e.toString();
+  } finally {
+    try {
+      if (tmpDir != null && await tmpDir.exists()) {
+        await tmpDir.delete(recursive: true);
+      }
+    } catch (_) {}
+  }
+}
+
+/// ✅ NEW: Fallback copy dir khi rename fail (cross-volume iOS)
+Future<void> _copyDir(Directory src, Directory dest) async {
+  await dest.create(recursive: true);
+  await for (final entity in src.list(recursive: false)) {
+    if (entity is Directory) {
+      final newDir = Directory(
+        p.join(dest.path, p.basename(entity.path)),
+      );
+      await _copyDir(entity, newDir);
+    } else if (entity is File) {
+      await entity.copy(
+        p.join(dest.path, p.basename(entity.path)),
+      );
     }
   }
+}
 
   /// ✅ NEW: Patch localPath trong DB sau khi đổi tên file audio
   Future<void> _patchDbAfterRestore(

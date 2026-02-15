@@ -1,0 +1,29 @@
+{
+  "assets": {},
+  "config": {
+    "build_asset_types": [
+      "code_assets/code"
+    ],
+    "extensions": {
+      "code_assets": {
+        "android": {
+          "target_ndk_api": 24
+        },
+        "c_compiler": {
+          "ar": "C:\\Users\\ADMIN\\AppData\\Local\\Android\\sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\llvm-ar.exe",
+          "cc": "C:\\Users\\ADMIN\\AppData\\Local\\Android\\sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+          "ld": "C:\\Users\\ADMIN\\AppData\\Local\\Android\\sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\ld.lld.exe"
+        },
+        "link_mode_preference": "dynamic",
+        "target_architecture": "x64",
+        "target_os": "android"
+      }
+    },
+    "linking_enabled": true
+  },
+  "out_dir_shared": "C:\\Users\\ADMIN\\Downloads\\test1\\test1\\.dart_tool\\hooks_runner\\shared\\sqlite3\\build\\",
+  "out_file": "C:\\Users\\ADMIN\\Downloads\\test1\\test1\\.dart_tool\\hooks_runner\\sqlite3\\074c91565ada0065455030fd4379578a\\output.json",
+  "package_name": "sqlite3",
+  "package_root": "C:\\Users\\ADMIN\\AppData\\Local\\Pub\\Cache\\hosted\\pub.dev\\sqlite3-3.1.4\\",
+  "user_defines": {}
+}
