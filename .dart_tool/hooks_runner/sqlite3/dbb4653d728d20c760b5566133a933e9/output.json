@@ -1,0 +1,17 @@
+{
+  "assets": [
+    {
+      "encoding": {
+        "file": "C:\\Users\\ADMIN\\Downloads\\test1\\test1\\.dart_tool\\hooks_runner\\shared\\sqlite3\\build\\download-15360594\\sqlite3.x64.windows.dll",
+        "id": "package:sqlite3/src/ffi/libsqlite3.g.dart",
+        "link_mode": {
+          "type": "dynamic_loading_bundle"
+        }
+      },
+      "type": "code_assets/code"
+    }
+  ],
+  "assets_for_linking": {},
+  "status": "success",
+  "timestamp": "2026-02-15 21:02:09.000"
+}

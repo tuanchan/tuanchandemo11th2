@@ -586,6 +586,10 @@ class AppLogic extends ChangeNotifier {
     _loadSettings();
 
     await _initFolders();
+
+    // ✅ NEW: nếu lần trước restore bị kill giữa chừng -> tự recover
+    await _recoverIfInterruptedRestore();
+
     await _initDb();
     await _loadAllFromDb();
 
@@ -600,9 +604,7 @@ class AppLogic extends ChangeNotifier {
           _scheduleSavePlayback();
           notifyListeners();
         },
-        onEvent: (_) {
-          _scheduleSavePlayback();
-        },
+        onEvent: (_) => _scheduleSavePlayback(),
       ),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.tuanchan.localplayer.audio',
@@ -611,20 +613,48 @@ class AppLogic extends ChangeNotifier {
       ),
     );
 
-    // Sync UI currentTrack theo MediaItem thật của player
     _mediaItemSub = handler.mediaItem.listen((mi) {
       if (mi == null) return;
-      final id = mi.id;
-
-      final i = library.indexWhere((t) => t.id == id);
+      final i = library.indexWhere((t) => t.id == mi.id);
       if (i >= 0) {
         _current = library[i];
         notifyListeners();
       }
     });
 
-    // Restore without autoplay
     await _restorePlaybackStateWithoutAutoPlay();
+  }
+
+  /// ✅ NEW: marker-based recovery nếu restore đang dang dở
+  Future<void> _recoverIfInterruptedRestore() async {
+    final lock = File(p.join(_rootDir.path, '.restore_lock'));
+    final dbFile = File(p.join(_rootDir.path, 'app.db'));
+
+    // Nếu có lock => restore chưa hoàn tất
+    if (await lock.exists()) {
+      // Trường hợp hay gặp: rootDir bị xoá dở / db mất / unzip dang dở
+      // => reset về trạng thái sạch + xoá lock
+      try {
+        if (await _rootDir.exists()) {
+          await _rootDir.delete(recursive: true);
+        }
+      } catch (_) {}
+
+      await _initFolders();
+
+      try {
+        if (await lock.exists()) await lock.delete();
+      } catch (_) {}
+      return;
+    }
+
+    // Nếu không có lock nhưng db bị mất (kill đúng lúc xoá) => tự tạo lại folders/db
+    if (!await dbFile.exists()) {
+      // Không xoá audio/images (nếu còn) để tránh mất file,
+      // nhưng DB sẽ được tạo lại ở _initDb(). (Nếu anh muốn rebuild DB từ folder thì làm sau)
+      // Ở đây chỉ đảm bảo init không crash.
+      return;
+    }
   }
 
   void _loadSettings() {
@@ -1717,7 +1747,14 @@ class AppLogic extends ChangeNotifier {
   /// ===============================
   /// RESTORE → IMPORT ZIP
   /// ===============================
+  /// ===============================
+  /// RESTORE → IMPORT ZIP (FIX: đóng DB/player trước khi xoá rootDir để tránh crash/white screen)
+  /// ===============================
   Future<String?> importLibraryFromZip() async {
+    File? lock;
+    Directory? tmpDir;
+    Directory? oldDir;
+
     try {
       final res = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -1726,37 +1763,115 @@ class AppLogic extends ChangeNotifier {
       );
 
       if (res == null || res.files.isEmpty) return 'Đã huỷ';
-
       final zipPath = res.files.first.path;
       if (zipPath == null) return 'File không hợp lệ';
 
+      // 1) TEARDOWN runtime trước (đóng db/player để không giữ file handle)
+      await _teardownBeforeRestore();
+
+      // 2) Create restore lock (để kill giữa chừng vẫn recover được)
+      lock = File(p.join(_rootDir.path, '.restore_lock'));
+      try {
+        await lock.writeAsString(DateTime.now().toIso8601String());
+      } catch (_) {}
+
+      // 3) Decode zip
       final bytes = await File(zipPath).readAsBytes();
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      // xoá dữ liệu cũ
-      if (await _rootDir.exists()) {
-        await _rootDir.delete(recursive: true);
-      }
-
-      await _initFolders();
+      // 4) Unzip vào TEMP folder (cùng parent với root để rename nhanh)
+      final parent = Directory(p.dirname(_rootDir.path));
+      tmpDir = Directory(p.join(parent.path, 'AppMusicVol2_tmp_restore'));
+      if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
+      await tmpDir.create(recursive: true);
 
       for (final file in archive) {
-        final outPath = p.join(_rootDir.path, file.name);
+        final outPath = p.join(tmpDir.path, file.name);
         if (file.isFile) {
           final outFile = File(outPath);
           await outFile.create(recursive: true);
           await outFile.writeAsBytes(file.content as List<int>);
+        } else {
+          await Directory(outPath).create(recursive: true);
         }
       }
 
+      // 5) SWAP ATOMIC (rename): root -> old, tmp -> root
+      oldDir = Directory(p.join(parent.path, 'AppMusicVol2_old_backup'));
+      if (await oldDir.exists()) await oldDir.delete(recursive: true);
+
+      if (await _rootDir.exists()) {
+        await _rootDir.rename(oldDir.path);
+      }
+
+      await tmpDir.rename(_rootDir.path);
+
+      // 6) Remove lock (restore done)
+      try {
+        final lockNow = File(p.join(_rootDir.path, '.restore_lock'));
+        if (await lockNow.exists()) await lockNow.delete();
+      } catch (_) {}
+
+      // 7) Re-init folders pointers + DB + load
+      await _initFolders();
       await _initDb();
       await _loadAllFromDb();
+
+      // 8) Rebuild queue safe (không autoplay)
+      if (library.isNotEmpty) {
+        await setCurrent(library.first.id, autoPlay: false);
+        await handler.pause();
+      }
+
+      // 9) Cleanup old backup dir (có thể xoá, hoặc giữ lại tuỳ anh)
+      try {
+        if (oldDir != null && await oldDir.exists()) {
+          await oldDir.delete(recursive: true);
+        }
+      } catch (_) {}
 
       notifyListeners();
       return null;
     } catch (e) {
       return e.toString();
+    } finally {
+      // nếu fail giữa chừng: tmp có thể tồn tại
+      try {
+        if (tmpDir != null && await tmpDir.exists()) {
+          await tmpDir.delete(recursive: true);
+        }
+      } catch (_) {}
+      // nếu fail trước khi swap, lock vẫn còn => init() sẽ recover
     }
+  }
+
+  /// Helper: đóng mọi thứ trước khi restore để không “giữ tay” vào file cũ
+  Future<void> _teardownBeforeRestore() async {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+
+    await _mediaItemSub?.cancel();
+    _mediaItemSub = null;
+
+    try {
+      if (_current != null) await handler.pause();
+      await handler.stop();
+    } catch (_) {}
+
+    try {
+      await _db?.close();
+    } catch (_) {}
+    _db = null;
+
+    library.clear();
+    favorites.clear();
+    playlists.clear();
+    playlistItems.clear();
+    favoriteSegments.clear();
+    _current = null;
+    position = Duration.zero;
+
+    notifyListeners();
   }
 
   @override
