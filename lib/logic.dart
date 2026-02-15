@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
@@ -2128,7 +2129,12 @@ Future<void> _copyDir(Directory src, Directory dest) async {
 
     await _mediaItemSub?.cancel();
     _mediaItemSub = null;
+    // Thêm flag vào AppLogic
+bool _handlerReady = false;
 
+// Trong init(), sau AudioService.init():
+handler = await AudioService.init(...);
+_handlerReady = true; // ✅
     try {
       if (_current != null) await handler.pause();
       await handler.stop();
