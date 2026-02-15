@@ -682,9 +682,30 @@ class AppLogic extends ChangeNotifier {
       },
     );
 
-    // Optional: if user never touched themeConfig before, rebase defaults by mode.
-    // Nhưng KHÔNG tự reset nếu đã có custom.
-    // => Không làm gì thêm ở đây.
+    // 🔥 FIX: nếu user chưa custom theme (palette = default của mode cũ)
+    // thì rebase lại defaults theo mode mới để background/surface đổi đúng.
+    final oldIsDark = settings.themeMode == ThemeMode.dark ||
+        settings.themeMode == ThemeMode.system;
+
+    final newIsDark = mode == ThemeMode.dark || mode == ThemeMode.system;
+
+    final currentCfg = settings.themeConfig;
+    final defaultOld = ThemeConfig.defaults(darkDefault: oldIsDark);
+
+    bool isStillDefault = true;
+    for (final k in ThemeConfig.keys) {
+      if (currentCfg.colors[k] != defaultOld.colors[k]) {
+        isStillDefault = false;
+        break;
+      }
+    }
+
+    if (isStillDefault) {
+      settings = settings.copyWith(
+        themeConfig: ThemeConfig.defaults(darkDefault: newIsDark),
+      );
+      await _persistThemeConfig();
+    }
 
     notifyListeners();
   }
