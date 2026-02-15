@@ -974,7 +974,6 @@ class AppLogic extends ChangeNotifier {
   /// Import audio (mp3/m4a) + dedupe + copy into Documents
   /// ===============================
   Future<void> importAudioFiles() async {
-    // iOS may not need storage permission; Android does. Keep safe:
     if (!kIsWeb && (Platform.isAndroid)) {
       final st = await Permission.audio.request();
       if (!st.isGranted) return;
@@ -995,10 +994,7 @@ class AppLogic extends ChangeNotifier {
       if (srcPath == null) continue;
 
       final ext = p.extension(srcPath).toLowerCase();
-      if (ext != '.mp3' && ext != '.m4a') {
-        // ignore wrong types without crash
-        continue;
-      }
+      if (ext != '.mp3' && ext != '.m4a') continue;
 
       final file = File(srcPath);
       if (!await file.exists()) continue;
@@ -1006,7 +1002,6 @@ class AppLogic extends ChangeNotifier {
       final stat = await file.stat();
       final signature = '${p.basename(srcPath)}::${stat.size}';
 
-      // dedupe by signature
       final exists = await _db!.query(
         'tracks',
         where: 'signature=?',
@@ -1016,18 +1011,27 @@ class AppLogic extends ChangeNotifier {
       if (exists.isNotEmpty) continue;
 
       final id = _uuid();
-      final safeName = _safeFileName(p.basename(srcPath));
-      final destPath = p.join(audioDir.path, '${id}_$safeName');
+      // ✅ FIX: tên file = id + ext (không có unicode/space -> tránh lỗi -11800)
+      final destPath = p.join(audioDir.path, '$id$ext');
 
       await file.copy(destPath);
 
-      // duration: load into temp AudioPlayer to read duration (no hardcode)
+      // ✅ verify file copy thành công
+      final destFile = File(destPath);
+      if (!await destFile.exists() || (await destFile.stat()).size == 0) {
+        try {
+          await destFile.delete();
+        } catch (_) {}
+        continue;
+      }
+
       final durationMs = await _probeDurationMs(destPath);
 
-      final title = p.basenameWithoutExtension(safeName);
+      // title vẫn lấy tên gốc để hiển thị đẹp
+      final title = p.basenameWithoutExtension(p.basename(srcPath));
       final row = TrackRow(
         id: id,
-        title: title,
+        title: title.isEmpty ? 'Unknown' : title,
         artist: 'Unknown',
         localPath: destPath,
         signature: signature,
@@ -1042,7 +1046,6 @@ class AppLogic extends ChangeNotifier {
 
     if (imported > 0) {
       await _loadAllFromDb();
-      // auto set current if empty
       if (_current == null && library.isNotEmpty) {
         await setCurrent(library.first.id, autoPlay: false);
       }
@@ -1412,14 +1415,13 @@ class AppLogic extends ChangeNotifier {
   /// NEW: Import directly into a playlist - ALLOWS MULTIPLE FILE SELECTION
   /// ===============================
   Future<void> importIntoPlaylist(String playlistId) async {
-    // iOS may not need storage permission; Android does. Keep safe:
     if (!kIsWeb && (Platform.isAndroid)) {
       final st = await Permission.audio.request();
       if (!st.isGranted) return;
     }
 
     final res = await FilePicker.platform.pickFiles(
-      allowMultiple: true, // MULTIPLE FILES ENABLED
+      allowMultiple: true,
       type: FileType.custom,
       allowedExtensions: const ['mp3', 'm4a'],
       withData: false,
@@ -1440,7 +1442,6 @@ class AppLogic extends ChangeNotifier {
       final stat = await file.stat();
       final signature = '${p.basename(srcPath)}::${stat.size}';
 
-      // If exists in DB, reuse it
       final exists = await _db!.query(
         'tracks',
         where: 'signature=?',
@@ -1453,18 +1454,26 @@ class AppLogic extends ChangeNotifier {
       if (exists.isNotEmpty) {
         trackId = exists.first['id'] as String;
       } else {
-        // Import as new track
         final id = _uuid();
-        final safeName = _safeFileName(p.basename(srcPath));
-        final destPath = p.join(audioDir.path, '${id}_$safeName');
+        // ✅ FIX: tên file = id + ext
+        final destPath = p.join(audioDir.path, '$id$ext');
 
         await file.copy(destPath);
 
+        final destFile = File(destPath);
+        if (!await destFile.exists() || (await destFile.stat()).size == 0) {
+          try {
+            await destFile.delete();
+          } catch (_) {}
+          continue;
+        }
+
         final durationMs = await _probeDurationMs(destPath);
+        final title = p.basenameWithoutExtension(p.basename(srcPath));
 
         final row = TrackRow(
           id: id,
-          title: p.basenameWithoutExtension(safeName),
+          title: title.isEmpty ? 'Unknown' : title,
           artist: 'Unknown',
           localPath: destPath,
           signature: signature,
@@ -1477,7 +1486,6 @@ class AppLogic extends ChangeNotifier {
         trackId = id;
       }
 
-      // Add into playlist (no duplicates)
       await addToPlaylist(playlistId, trackId);
     }
 
@@ -1933,6 +1941,11 @@ class AppLogic extends ChangeNotifier {
     final dbPath = p.join(tmpDirPath, 'app.db');
     if (!await File(dbPath).exists()) return;
 
+    // ✅ FIX: tính trước rootDir thật (tmpDir sẽ được rename thành rootDir)
+    // nên path cuối cùng phải dùng audioDir.path (đã được _initFolders set đúng)
+    // Nhưng _initFolders chưa chạy lúc này -> dùng tmpDirPath/Audio làm base tạm,
+    // _rebuildAbsolutePathsAfterRestore() sẽ fix lại đúng path sau khi rename xong.
+
     Database? patchDb;
     try {
       patchDb = await openDatabase(dbPath);
@@ -1942,29 +1955,30 @@ class AppLogic extends ChangeNotifier {
         final oldLocalPath = row['localPath'] as String? ?? '';
         if (oldLocalPath.isEmpty) continue;
 
-        // Convert absolute path -> relative (chỉ lấy phần Audio/xxx.mp3)
-        // localPath trong DB là absolute path của máy cũ
-        // => tìm trong pathRemap bằng cách match phần cuối
-        String? newRelPath;
+        String? matchedOldRel;
+        String? matchedNewRel;
+
         for (final entry in pathRemap.entries) {
-          // entry.key = 'Audio/id_safeName.mp3' (old rel)
-          if (oldLocalPath
-              .contains(entry.key.replaceAll('/', Platform.pathSeparator))) {
-            newRelPath = entry.value;
+          final oldRel = entry.key; // e.g. 'Audio/123_tenfile.mp3'
+          // Match theo basename của oldRel vs basename của oldLocalPath
+          if (p.basename(oldLocalPath) == p.basename(oldRel)) {
+            matchedOldRel = oldRel;
+            matchedNewRel = entry.value; // e.g. 'Audio/123.mp3'
             break;
           }
-          // fallback: match basename
-          if (p.basename(oldLocalPath) == p.basename(entry.key)) {
-            newRelPath = entry.value;
+          // fallback: path contains
+          if (oldLocalPath
+              .contains(oldRel.replaceAll('/', Platform.pathSeparator))) {
+            matchedOldRel = oldRel;
+            matchedNewRel = entry.value;
             break;
           }
         }
 
-        if (newRelPath != null) {
-          // newLocalPath sẽ được rebuild khi _initFolders() chạy trên máy mới
-          // Lưu dạng relative để _rebuildAbsolutePaths() fix sau
-          // Thực tế: lưu absolute dựa trên tmpDirPath
-          final newAbsPath = p.join(tmpDirPath, newRelPath);
+        if (matchedNewRel != null) {
+          // ✅ FIX: lưu path dựa trên tmpDirPath (sẽ được rename thành rootDir)
+          // _rebuildAbsolutePathsAfterRestore() sẽ fix lại nếu path thay đổi sau rename
+          final newAbsPath = p.join(tmpDirPath, matchedNewRel);
           await patchDb.update(
             'tracks',
             {'localPath': newAbsPath},
