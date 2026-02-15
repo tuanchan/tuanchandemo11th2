@@ -1818,37 +1818,68 @@ class AppLogic extends ChangeNotifier {
       final zipPath = res.files.first.path;
       if (zipPath == null) return 'File không hợp lệ';
 
-      // 1) TEARDOWN runtime trước (đóng db/player để không giữ file handle)
       await _teardownBeforeRestore();
 
-      // 2) Create restore lock (để kill giữa chừng vẫn recover được)
       lock = File(p.join(_rootDir.path, '.restore_lock'));
       try {
         await lock.writeAsString(DateTime.now().toIso8601String());
       } catch (_) {}
 
-      // 3) Decode zip
       final bytes = await File(zipPath).readAsBytes();
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      // 4) Unzip vào TEMP folder (cùng parent với root để rename nhanh)
       final parent = Directory(p.dirname(_rootDir.path));
       tmpDir = Directory(p.join(parent.path, 'AppMusicVol2_tmp_restore'));
       if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
       await tmpDir.create(recursive: true);
 
+      // ✅ FIX: Map old localPath -> new localPath để patch DB sau
+      final pathRemap = <String, String>{}; // oldRelPath -> newRelPath
+
       for (final file in archive) {
-        final outPath = p.join(tmpDir.path, file.name);
-        if (file.isFile) {
-          final outFile = File(outPath);
-          await outFile.create(recursive: true);
-          await outFile.writeAsBytes(file.content as List<int>);
-        } else {
-          await Directory(outPath).create(recursive: true);
+        if (!file.isFile) {
+          await Directory(p.join(tmpDir.path, file.name))
+              .create(recursive: true);
+          continue;
         }
+
+        String outRelPath = file.name;
+        String outPath = p.join(tmpDir.path, outRelPath);
+
+        // ✅ FIX: Nếu là file audio (trong thư mục Audio/) thì đổi tên = id + ext
+        // để tránh lỗi -11800 do tên file unicode/space trên iOS AVFoundation
+        final isAudio =
+            outRelPath.startsWith('Audio/') || outRelPath.startsWith('Audio\\');
+        if (isAudio) {
+          final ext = p.extension(file.name).toLowerCase();
+          if (ext == '.mp3' || ext == '.m4a') {
+            // Lấy id từ tên file cũ nếu có (format: id_safeName.ext hoặc id.ext)
+            final baseName = p.basenameWithoutExtension(p.basename(file.name));
+            // Thử extract id = phần trước dấu '_' đầu tiên
+            final underscoreIdx = baseName.indexOf('_');
+            final id = underscoreIdx > 0
+                ? baseName.substring(0, underscoreIdx)
+                : baseName;
+
+            final newRelPath = 'Audio/$id$ext';
+            if (newRelPath != outRelPath) {
+              pathRemap[outRelPath] = newRelPath;
+              outRelPath = newRelPath;
+              outPath = p.join(tmpDir.path, outRelPath);
+            }
+          }
+        }
+
+        final outFile = File(outPath);
+        await outFile.create(recursive: true);
+        await outFile.writeAsBytes(file.content as List<int>);
       }
 
-      // 5) SWAP ATOMIC (rename): root -> old, tmp -> root
+      // ✅ FIX: Patch app.db bên trong tmpDir để update localPath theo pathRemap
+      if (pathRemap.isNotEmpty) {
+        await _patchDbAfterRestore(tmpDir.path, pathRemap);
+      }
+
       oldDir = Directory(p.join(parent.path, 'AppMusicVol2_old_backup'));
       if (await oldDir.exists()) await oldDir.delete(recursive: true);
 
@@ -1858,24 +1889,25 @@ class AppLogic extends ChangeNotifier {
 
       await tmpDir.rename(_rootDir.path);
 
-      // 6) Remove lock (restore done)
       try {
         final lockNow = File(p.join(_rootDir.path, '.restore_lock'));
         if (await lockNow.exists()) await lockNow.delete();
       } catch (_) {}
 
-      // 7) Re-init folders pointers + DB + load
       await _initFolders();
       await _initDb();
-      await _loadAllFromDb();
 
-      // 8) Rebuild queue safe (không autoplay)
+      // ✅ FIX: Rebuild absolute paths trước (Documents path có thể thay đổi trên iOS)
+      await _rebuildAbsolutePathsAfterRestore();
+
+      await _loadAllFromDb();
+      await _removeTracksWithMissingFiles();
+
       if (library.isNotEmpty) {
         await setCurrent(library.first.id, autoPlay: false);
         await handler.pause();
       }
 
-      // 9) Cleanup old backup dir (có thể xoá, hoặc giữ lại tuỳ anh)
       try {
         if (oldDir != null && await oldDir.exists()) {
           await oldDir.delete(recursive: true);
@@ -1887,13 +1919,132 @@ class AppLogic extends ChangeNotifier {
     } catch (e) {
       return e.toString();
     } finally {
-      // nếu fail giữa chừng: tmp có thể tồn tại
       try {
         if (tmpDir != null && await tmpDir.exists()) {
           await tmpDir.delete(recursive: true);
         }
       } catch (_) {}
-      // nếu fail trước khi swap, lock vẫn còn => init() sẽ recover
+    }
+  }
+
+  /// ✅ NEW: Patch localPath trong DB sau khi đổi tên file audio
+  Future<void> _patchDbAfterRestore(
+      String tmpDirPath, Map<String, String> pathRemap) async {
+    final dbPath = p.join(tmpDirPath, 'app.db');
+    if (!await File(dbPath).exists()) return;
+
+    Database? patchDb;
+    try {
+      patchDb = await openDatabase(dbPath);
+
+      final tracks = await patchDb.query('tracks');
+      for (final row in tracks) {
+        final oldLocalPath = row['localPath'] as String? ?? '';
+        if (oldLocalPath.isEmpty) continue;
+
+        // Convert absolute path -> relative (chỉ lấy phần Audio/xxx.mp3)
+        // localPath trong DB là absolute path của máy cũ
+        // => tìm trong pathRemap bằng cách match phần cuối
+        String? newRelPath;
+        for (final entry in pathRemap.entries) {
+          // entry.key = 'Audio/id_safeName.mp3' (old rel)
+          if (oldLocalPath
+              .contains(entry.key.replaceAll('/', Platform.pathSeparator))) {
+            newRelPath = entry.value;
+            break;
+          }
+          // fallback: match basename
+          if (p.basename(oldLocalPath) == p.basename(entry.key)) {
+            newRelPath = entry.value;
+            break;
+          }
+        }
+
+        if (newRelPath != null) {
+          // newLocalPath sẽ được rebuild khi _initFolders() chạy trên máy mới
+          // Lưu dạng relative để _rebuildAbsolutePaths() fix sau
+          // Thực tế: lưu absolute dựa trên tmpDirPath
+          final newAbsPath = p.join(tmpDirPath, newRelPath);
+          await patchDb.update(
+            'tracks',
+            {'localPath': newAbsPath},
+            where: 'id=?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('_patchDbAfterRestore error: $e');
+    } finally {
+      await patchDb?.close();
+    }
+  }
+
+  /// ✅ NEW: Sau khi restore + load DB, fix absolute paths vì rootDir có thể đổi
+  /// (VD: Documents path thay đổi giữa các lần cài app trên iOS)
+  Future<void> _rebuildAbsolutePathsAfterRestore() async {
+    final db = _db!;
+    final tracks = await db.query('tracks');
+
+    for (final row in tracks) {
+      final localPath = row['localPath'] as String? ?? '';
+      if (localPath.isEmpty) continue;
+
+      // Nếu file tồn tại ở path cũ -> không cần fix
+      if (await File(localPath).exists()) continue;
+
+      // Thử rebuild: lấy basename và tìm trong audioDir
+      final baseName = p.basename(localPath);
+      final candidate = p.join(audioDir.path, baseName);
+
+      if (await File(candidate).exists()) {
+        await db.update(
+          'tracks',
+          {'localPath': candidate},
+          where: 'id=?',
+          whereArgs: [row['id']],
+        );
+      }
+
+      // Tương tự coverPath
+      final coverPath = row['coverPath'] as String?;
+      if (coverPath != null && coverPath.isNotEmpty) {
+        if (!await File(coverPath).exists()) {
+          final coverBase = p.basename(coverPath);
+          final coverCandidate = p.join(imageDir.path, coverBase);
+          if (await File(coverCandidate).exists()) {
+            await db.update(
+              'tracks',
+              {'coverPath': coverCandidate},
+              where: 'id=?',
+              whereArgs: [row['id']],
+            );
+          }
+        }
+      }
+    }
+  }
+
+  /// ✅ NEW: Xoá track khỏi DB nếu file audio không còn tồn tại
+  Future<void> _removeTracksWithMissingFiles() async {
+    final db = _db!;
+    final toRemove = <String>[];
+
+    for (final t in library) {
+      if (!await File(t.localPath).exists()) {
+        toRemove.add(t.id);
+        debugPrint('Missing file, removing track: ${t.title} @ ${t.localPath}');
+      }
+    }
+
+    for (final id in toRemove) {
+      await db.delete('favorites', where: 'trackId=?', whereArgs: [id]);
+      await db.delete('playlist_items', where: 'trackId=?', whereArgs: [id]);
+      await db.delete('tracks', where: 'id=?', whereArgs: [id]);
+    }
+
+    if (toRemove.isNotEmpty) {
+      await _loadAllFromDb();
     }
   }
 
