@@ -373,11 +373,39 @@ class _Shell extends StatelessWidget {
               onTap: () {
                 Navigator.pop(context);
                 WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  // mở dialog progress
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => AnimatedBuilder(
+                      animation: logic,
+                      builder: (_, __) {
+                        return AlertDialog(
+                          title: const Text('Đang chuyển đổi video'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(logic.convertLabel),
+                              const SizedBox(height: 12),
+                              LinearProgressIndicator(
+                                  value: logic.convertProgress),
+                              const SizedBox(height: 8),
+                              Text(
+                                  '${(logic.convertProgress * 100).toStringAsFixed(0)}%'),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  );
+
                   final err = await logic.importVideoToM4a();
+
+                  if (context.mounted) Navigator.pop(context); // đóng dialog
+
                   if (err != null && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(err)),
-                    );
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text(err)));
                   }
                 });
               },

@@ -53,5 +53,14 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+		<key>NSPhotoLibraryUsageDescription</key>
+	<string>Ứng dụng cần quyền truy cập Thư viện Ảnh để chọn video và chuyển thành file âm thanh.</string>
+
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Ứng dụng cần quyền để lưu/xuất dữ liệu vào Thư viện Ảnh khi cần.</string>
+
+	<key>NSCameraUsageDescription</key>
+	<string>Ứng dụng cần quyền Camera nếu bạn muốn quay video để chuyển đổi.</string>
+
 </dict>
 </plist>
