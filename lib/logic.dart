@@ -14,6 +14,8 @@ import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min_gpl/return_code.dart';
 
 /// ===============================
 /// DB schema (single file, no hardcode)
@@ -990,6 +992,95 @@ class AppLogic extends ChangeNotifier {
       }
     }
   }
+
+  /// ===============================
+  /// NEW: Import from VIDEO -> convert to M4A (AAC) -> add into tracks DB
+  /// - KHÔNG đụng tới importAudioFiles() cũ
+  /// - Output lưu vào audioDir của app (Documents/AppMusicVol2/Audio)
+  /// - Trả về null nếu OK, trả về string nếu lỗi để UI show SnackBar
+  /// ===============================
+  Future<String?> importVideoToM4a() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        type: FileType.custom,
+        allowedExtensions: const ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'],
+        withData: false,
+      );
+
+      if (res == null || res.files.isEmpty) return 'Đã huỷ chọn video';
+      final srcPath = res.files.first.path;
+      if (srcPath == null) return 'Không lấy được đường dẫn video';
+
+      final srcFile = File(srcPath);
+      if (!await srcFile.exists()) return 'Video không tồn tại';
+
+      // Tạo output path trong audioDir (sandbox)
+      final id = _uuid();
+      final base = p.basenameWithoutExtension(srcPath);
+      final safeBase = _safeFileName(base);
+      final outPath = p.join(audioDir.path, '${id}_$safeBase.m4a');
+
+      // Convert -> M4A (AAC). -vn: bỏ video
+      // Encode AAC để ổn định (không phụ thuộc codec audio gốc)
+      final cmd =
+          '-y -i "${_ffq(srcPath)}" -vn -c:a aac -b:a 192k "${_ffq(outPath)}"';
+
+      final session = await FFmpegKit.execute(cmd);
+      final rc = await session.getReturnCode();
+
+      if (!ReturnCode.isSuccess(rc)) {
+        final logs = await session.getAllLogsAsString();
+        return 'Convert thất bại${logs == null || logs.trim().isEmpty ? '' : '\n$logs'}';
+      }
+
+      // duration
+      final durationMs = await _probeDurationMs(outPath);
+
+      // signature để dedupe (theo file output)
+      final st = await File(outPath).stat();
+      final signature = '${p.basename(outPath)}::${st.size}';
+
+      final exists = await _db!.query(
+        'tracks',
+        where: 'signature=?',
+        whereArgs: [signature],
+        limit: 1,
+      );
+      if (exists.isNotEmpty) {
+        // trùng thì xoá output mới tạo để khỏi rác
+        try {
+          await File(outPath).delete();
+        } catch (_) {}
+        return 'File đã tồn tại trong thư viện';
+      }
+
+      final row = TrackRow(
+        id: id,
+        title: safeBase.isEmpty ? 'Video Audio' : safeBase,
+        artist: 'Unknown',
+        localPath: outPath,
+        signature: signature,
+        coverPath: null,
+        durationMs: durationMs,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      );
+
+      await _db!.insert('tracks', row.toMap());
+      await _loadAllFromDb();
+
+      if (_current == null && library.isNotEmpty) {
+        await setCurrent(library.first.id, autoPlay: false);
+      }
+
+      return null; // OK
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Escape quote cho FFmpeg command
+  String _ffq(String s) => s.replaceAll('"', '\\"');
 
   Future<int> _probeDurationMs(String path) async {
     final ap = AudioPlayer();

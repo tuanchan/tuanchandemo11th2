@@ -329,12 +329,63 @@ class _Shell extends StatelessWidget {
       floatingActionButton: (tab == 0)
           ? FloatingActionButton(
               backgroundColor: Theme.of(context).colorScheme.primary,
-              onPressed: () async {
-                await logic.importAudioFiles();
-              },
+              onPressed: () => _openImportMenu(context),
               child: const Icon(Icons.add_rounded),
             )
           : null,
+    );
+  }
+
+  void _openImportMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: Theme.of(context).bottomSheetTheme.shape,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Theme.of(context).dividerColor,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.library_music_rounded),
+              title: const Text('Thêm file'),
+              subtitle: const Text('Chọn mp3/m4a'),
+              onTap: () {
+                Navigator.pop(context);
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  await logic.importAudioFiles();
+                });
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_file_rounded),
+              title: const Text('Chuyển video thành file'),
+              subtitle: const Text('Chọn video → xuất .m4a vào thư viện'),
+              onTap: () {
+                Navigator.pop(context);
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  final err = await logic.importVideoToM4a();
+                  if (err != null && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(err)),
+                    );
+                  }
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
     );
   }
 

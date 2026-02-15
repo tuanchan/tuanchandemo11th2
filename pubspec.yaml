@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
 
+  ffmpeg_kit_flutter_new_min_gpl: ^2.1.1
   # Audio
   just_audio: ^0.9.42
   audio_service: ^0.18.15

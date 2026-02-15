@@ -9,6 +9,7 @@
       "dependencies": [
         "audio_service",
         "audio_session",
+        "ffmpeg_kit_flutter_new_min_gpl",
         "file_picker",
         "flutter",
         "flutter_slidable",
@@ -192,6 +193,14 @@
         "path_provider",
         "rxdart",
         "uuid"
+      ]
+    },
+    {
+      "name": "ffmpeg_kit_flutter_new_min_gpl",
+      "version": "2.1.1",
+      "dependencies": [
+        "ffmpeg_kit_flutter_platform_interface",
+        "flutter"
       ]
     },
     {
@@ -678,6 +687,14 @@
     {
       "name": "just_audio_platform_interface",
       "version": "4.6.0",
+      "dependencies": [
+        "flutter",
+        "plugin_platform_interface"
+      ]
+    },
+    {
+      "name": "ffmpeg_kit_flutter_platform_interface",
+      "version": "0.2.1",
       "dependencies": [
         "flutter",
         "plugin_platform_interface"
