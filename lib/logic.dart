@@ -555,7 +555,9 @@ class AppLogic extends ChangeNotifier {
   StreamSubscription<MediaItem?>? _mediaItemSub;
 
   // Player
-  late final PlayerHandler handler;
+  PlayerHandler? handler;
+  bool _handlerReady = false;
+
   Duration position = Duration.zero;
 
   bool loopOne = false;
@@ -613,8 +615,8 @@ class AppLogic extends ChangeNotifier {
         androidNotificationOngoing: true,
       ),
     );
-
-    _mediaItemSub = handler.mediaItem.listen((mi) {
+    _handlerReady = true;
+    _mediaItemSub = handler!.mediaItem.listen((mi) {
       if (mi == null) return;
       final i = library.indexWhere((t) => t.id == mi.id);
       if (i >= 0) {
@@ -703,44 +705,43 @@ class AppLogic extends ChangeNotifier {
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
-    settings = settings.copyWith(themeMode: mode);
+  final prevMode = settings.themeMode;
 
-    await _prefs.setString(
-      _kPrefTheme,
-      switch (mode) {
-        ThemeMode.light => 'light',
-        ThemeMode.system => 'system',
-        _ => 'dark'
-      },
-    );
+  settings = settings.copyWith(themeMode: mode);
 
-    // 🔥 FIX: nếu user chưa custom theme (palette = default của mode cũ)
-    // thì rebase lại defaults theo mode mới để background/surface đổi đúng.
-    final oldIsDark = settings.themeMode == ThemeMode.dark ||
-        settings.themeMode == ThemeMode.system;
+  await _prefs.setString(
+    _kPrefTheme,
+    switch (mode) {
+      ThemeMode.light => 'light',
+      ThemeMode.system => 'system',
+      _ => 'dark'
+    },
+  );
 
-    final newIsDark = mode == ThemeMode.dark || mode == ThemeMode.system;
+  final oldIsDark = prevMode == ThemeMode.dark || prevMode == ThemeMode.system;
+  final newIsDark = mode == ThemeMode.dark || mode == ThemeMode.system;
 
-    final currentCfg = settings.themeConfig;
-    final defaultOld = ThemeConfig.defaults(darkDefault: oldIsDark);
+  final currentCfg = settings.themeConfig;
+  final defaultOld = ThemeConfig.defaults(darkDefault: oldIsDark);
 
-    bool isStillDefault = true;
-    for (final k in ThemeConfig.keys) {
-      if (currentCfg.colors[k] != defaultOld.colors[k]) {
-        isStillDefault = false;
-        break;
-      }
+  bool isStillDefault = true;
+  for (final k in ThemeConfig.keys) {
+    if (currentCfg.colors[k] != defaultOld.colors[k]) {
+      isStillDefault = false;
+      break;
     }
-
-    if (isStillDefault) {
-      settings = settings.copyWith(
-        themeConfig: ThemeConfig.defaults(darkDefault: newIsDark),
-      );
-      await _persistThemeConfig();
-    }
-
-    notifyListeners();
   }
+
+  if (isStillDefault) {
+    settings = settings.copyWith(
+      themeConfig: ThemeConfig.defaults(darkDefault: newIsDark),
+    );
+    await _persistThemeConfig();
+  }
+
+  notifyListeners();
+}
+
 
   Future<void> setAppTitle(String title) async {
     final t = title.trim().isEmpty ? 'Local Player' : title.trim();
@@ -817,7 +818,7 @@ class AppLogic extends ChangeNotifier {
       if (!await d.exists()) await d.create(recursive: true);
     }
   }
-
+File get _globalRestoreLock => File(p.join(_docsDir.path, '.appmusic_restore_lock'));
   Future<void> _initDb() async {
     final dbPath = p.join(_rootDir.path, 'app.db');
     _db = await openDatabase(
@@ -1268,7 +1269,8 @@ class AppLogic extends ChangeNotifier {
 
     // stop if currently playing this
     if (_current?.id == trackId) {
-      await handler.pause();
+      await handler?.pause();
+
       _current = null;
       position = Duration.zero;
       await _savePlaybackNow(
@@ -1379,12 +1381,12 @@ class AppLogic extends ChangeNotifier {
     final startPos = Duration(milliseconds: segment.startMs);
 
     final items = library.map(_toMediaItem).toList();
-    await handler.setQueueFromTracks(items,
+    await handler!.setQueueFromTracks(items,
         startIndex: idx, startPos: startPos);
-    await handler.setLoopOne(false);
+    await handler!.setLoopOne(false);
 
     if (autoPlay) {
-      await handler.play();
+      await handler!.play();
     }
 
     await _savePlaybackNow(
@@ -1532,13 +1534,13 @@ class AppLogic extends ChangeNotifier {
     _current = tracks[startIndex];
     position = Duration.zero;
 
-    await handler.setQueueFromTracks(items, startIndex: startIndex);
-    await handler.setLoopOne(loopOne);
+    await handler!.setQueueFromTracks(items, startIndex: startIndex);
+    await handler!.setLoopOne(loopOne);
 
     if (autoPlay) {
-      await handler.play();
+      await handler!.play();
     } else {
-      await handler.pause();
+      await handler!.pause();
     }
 
     await _savePlaybackNow(
@@ -1573,17 +1575,17 @@ class AppLogic extends ChangeNotifier {
 
     try {
       final items = library.map(_toMediaItem).toList();
-      await handler.setQueueFromTracks(
+      await handler!.setQueueFromTracks(
         items,
         startIndex: idx,
         startPos: startPos,
       );
-      await handler.setLoopOne(loopOne);
+      await handler!.setLoopOne(loopOne);
 
       if (autoPlay) {
-        await handler.play();
+        await handler!.play();
       } else {
-        await handler.pause();
+        await handler!.pause();
       }
 
       await _savePlaybackNow(
@@ -1605,30 +1607,30 @@ class AppLogic extends ChangeNotifier {
       }
       return;
     }
-    final playing = handler.playbackState.value.playing;
-    if (playing) {
-      await handler.pause();
+    final playing = handler?.playbackState.value.playing ?? false;
+if (playing) {
+      await handler?.pause();
     } else {
-      await handler.play();
+      await handler?.play();
     }
     _scheduleSavePlayback();
     notifyListeners();
   }
 
   Future<void> next() async {
-    await handler.skipToNext();
+    await handler?.skipToNext();
     _scheduleSavePlayback();
     notifyListeners(); // _current sẽ được update bởi mediaItem listener
   }
 
   Future<void> previous() async {
-    await handler.skipToPrevious();
+    await handler?.skipToPrevious();
     _scheduleSavePlayback();
     notifyListeners(); // _current sẽ được update bởi mediaItem listener
   }
 
   Future<void> seek(Duration to) async {
-    await handler.seek(to);
+    await handler?.seek(to);
     position = to;
     _scheduleSavePlayback();
     notifyListeners();
@@ -1636,7 +1638,7 @@ class AppLogic extends ChangeNotifier {
 
   Future<void> toggleLoopOne() async {
     loopOne = !loopOne;
-    await handler.setLoopOne(loopOne);
+    await handler?.setLoopOne(loopOne);
     _scheduleSavePlayback();
     notifyListeners();
   }
@@ -1694,10 +1696,10 @@ class AppLogic extends ChangeNotifier {
 
     try {
       final items = library.map(_toMediaItem).toList();
-      await handler.setQueueFromTracks(items, startIndex: idx);
-      await handler.setLoopOne(loopOne);
+      await handler!.setQueueFromTracks(items, startIndex: idx);
+      await handler!.setLoopOne(loopOne);
       // ✅ CRITICAL: luôn pause sau restore, không tự phát
-      await handler.pause();
+      await handler!.pause();
     } catch (e) {
       debugPrint('restore error: $e');
       _current = null;
@@ -1709,16 +1711,17 @@ class AppLogic extends ChangeNotifier {
   void _scheduleSavePlayback() {
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 600), () async {
-      final idx = handler.playbackState.value.queueIndex;
+      final idx = handler?.playbackState.value.queueIndex;
       final currentId = (idx != null && idx >= 0 && idx < library.length)
           ? library[idx].id
           : _current?.id;
 
       await _savePlaybackNow(
-        isPlaying: handler.playbackState.value.playing,
-        currentTrackId: currentId,
-        positionMs: position.inMilliseconds,
-      );
+  isPlaying: handler?.playbackState.value.playing ?? false,
+  currentTrackId: currentId,
+  positionMs: position.inMilliseconds,
+);
+
     });
   }
 
@@ -1824,7 +1827,10 @@ class AppLogic extends ChangeNotifier {
   /// ===============================
 /// RESTORE → IMPORT ZIP (STREAMING - chịu 1GB+)
 /// ===============================
+
+
 Future<String?> importLibraryFromZip() async {
+  await _initFolders();
   Directory? tmpDir;
   Directory? oldDir;
 
@@ -1955,7 +1961,7 @@ Future<String?> importLibraryFromZip() async {
 
     if (library.isNotEmpty) {
       await setCurrent(library.first.id, autoPlay: false);
-      await handler.pause();
+      await handler?.pause();
     }
 
     // 9) Cleanup old
@@ -2129,16 +2135,15 @@ Future<void> _copyDir(Directory src, Directory dest) async {
 
     await _mediaItemSub?.cancel();
     _mediaItemSub = null;
-    // Thêm flag vào AppLogic
-bool _handlerReady = false;
+    
+    if (_handlerReady && handler != null) {
+  try { await handler!.pause(); } catch (_) {}
+  try { await handler!.stop(); } catch (_) {}
+}
+handler = null;
+_handlerReady = false;
 
-// Trong init(), sau AudioService.init():
-handler = await AudioService.init(...);
-_handlerReady = true; // ✅
-    try {
-      if (_current != null) await handler.pause();
-      await handler.stop();
-    } catch (_) {}
+
 
     try {
       await _db?.close();
@@ -2156,11 +2161,15 @@ _handlerReady = true; // ✅
     notifyListeners();
   }
 
-  @override
+   @override
   void dispose() {
     _saveTimer?.cancel();
     _mediaItemSub?.cancel();
-    handler.stop();
+
+    if (_handlerReady && handler != null) {
+      handler!.stop();
+    }
+
     _db?.close();
     super.dispose();
   }
