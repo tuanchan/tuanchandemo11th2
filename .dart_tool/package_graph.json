@@ -7,6 +7,7 @@
       "name": "test1",
       "version": "1.0.0+1",
       "dependencies": [
+        "archive",
         "audio_service",
         "audio_session",
         "ffmpeg_kit_flutter_new_min_gpl",
@@ -107,6 +108,14 @@
         "sqflite_common",
         "sqflite_darwin",
         "sqflite_platform_interface"
+      ]
+    },
+    {
+      "name": "archive",
+      "version": "3.6.1",
+      "dependencies": [
+        "crypto",
+        "path"
       ]
     },
     {
@@ -248,7 +257,7 @@
     },
     {
       "name": "image",
-      "version": "4.7.2",
+      "version": "4.3.0",
       "dependencies": [
         "archive",
         "meta",
@@ -482,6 +491,13 @@
       ]
     },
     {
+      "name": "crypto",
+      "version": "3.0.7",
+      "dependencies": [
+        "typed_data"
+      ]
+    },
+    {
       "name": "path_provider_windows",
       "version": "2.3.0",
       "dependencies": [
@@ -665,13 +681,6 @@
       ]
     },
     {
-      "name": "crypto",
-      "version": "3.0.7",
-      "dependencies": [
-        "typed_data"
-      ]
-    },
-    {
       "name": "uuid",
       "version": "4.5.2",
       "dependencies": [
@@ -823,15 +832,6 @@
         "collection",
         "meta",
         "petitparser"
-      ]
-    },
-    {
-      "name": "archive",
-      "version": "4.0.7",
-      "dependencies": [
-        "crypto",
-        "path",
-        "posix"
       ]
     },
     {
@@ -1003,15 +1003,6 @@
       "dependencies": [
         "collection",
         "meta"
-      ]
-    },
-    {
-      "name": "posix",
-      "version": "6.0.3",
-      "dependencies": [
-        "ffi",
-        "meta",
-        "path"
       ]
     },
     {

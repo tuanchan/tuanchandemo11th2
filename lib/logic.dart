@@ -1680,6 +1680,84 @@ class AppLogic extends ChangeNotifier {
     return base.isEmpty ? 'file' : base;
   }
 
+  /// ===============================
+  /// BACKUP → EXPORT ZIP
+  /// ===============================
+  Future<String?> exportLibraryToZip() async {
+    try {
+      final archive = Archive();
+
+      final root = Directory(_rootDir.path);
+      if (!await root.exists()) return 'Không tìm thấy dữ liệu';
+
+      final files = root.listSync(recursive: true, followLinks: false);
+
+      for (final f in files) {
+        if (f is File) {
+          final rel = p.relative(f.path, from: _rootDir.path);
+          final bytes = await f.readAsBytes();
+          archive.addFile(ArchiveFile(rel, bytes.length, bytes));
+        }
+      }
+
+      final zipData = ZipEncoder().encode(archive);
+      if (zipData == null) return 'Không thể tạo file zip';
+
+      final exportPath = p.join(
+          _rootDir.path, 'backup_${DateTime.now().millisecondsSinceEpoch}.zip');
+
+      await File(exportPath).writeAsBytes(zipData);
+      return exportPath;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// ===============================
+  /// RESTORE → IMPORT ZIP
+  /// ===============================
+  Future<String?> importLibraryFromZip() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+        allowMultiple: false,
+      );
+
+      if (res == null || res.files.isEmpty) return 'Đã huỷ';
+
+      final zipPath = res.files.first.path;
+      if (zipPath == null) return 'File không hợp lệ';
+
+      final bytes = await File(zipPath).readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      // xoá dữ liệu cũ
+      if (await _rootDir.exists()) {
+        await _rootDir.delete(recursive: true);
+      }
+
+      await _initFolders();
+
+      for (final file in archive) {
+        final outPath = p.join(_rootDir.path, file.name);
+        if (file.isFile) {
+          final outFile = File(outPath);
+          await outFile.create(recursive: true);
+          await outFile.writeAsBytes(file.content as List<int>);
+        }
+      }
+
+      await _initDb();
+      await _loadAllFromDb();
+
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   @override
   void dispose() {
     _saveTimer?.cancel();

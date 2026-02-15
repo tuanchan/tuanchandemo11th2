@@ -1,7 +1,7 @@
 // app.dart
 // app.dart - CẬP NHẬT: THEME CONFIG A→Z (đổi mọi màu/font), GIỮ NGUYÊN UI/LAYOUT,
 // VISUALIZER TO HƠN + STICKY HEROCARD
-
+import 'package:archive/archive.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -1458,6 +1458,58 @@ class _SettingsPageState extends State<_SettingsPage> {
                   child: FilledButton(
                       onPressed: () => logic.setAppTitle(_titleCtrl.text),
                       child: const Text('Lưu')),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.backup_rounded),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Backup & Restore',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  icon: const Icon(Icons.archive_rounded),
+                  label: const Text('Xuất backup (.zip)'),
+                  onPressed: () async {
+                    final path = await widget.logic.exportLibraryToZip();
+                    if (!context.mounted) return;
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(path ?? 'Lỗi')),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('Import backup'),
+                  onPressed: () async {
+                    final err = await widget.logic.importLibraryFromZip();
+                    if (!context.mounted) return;
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(err ?? 'Khôi phục thành công'),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
