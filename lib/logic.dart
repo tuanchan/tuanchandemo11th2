@@ -1554,23 +1554,37 @@ class AppLogic extends ChangeNotifier {
 
     _current = library[idx];
 
-    final items = library.map(_toMediaItem).toList();
-    await handler.setQueueFromTracks(items,
-        startIndex: idx, startPos: startPos);
-    await handler.setLoopOne(loopOne);
-
-    if (autoPlay) {
-      await handler.play();
-    } else {
-      await handler.pause();
+    // ✅ FIX: Verify file actually exists before trying to play
+    final file = File(_current!.localPath);
+    if (!await file.exists()) {
+      debugPrint('setCurrent: file not found at ${_current!.localPath}');
+      notifyListeners();
+      return;
     }
 
-    // save state
-    await _savePlaybackNow(
-      isPlaying: autoPlay,
-      currentTrackId: trackId,
-      positionMs: (startPos ?? Duration.zero).inMilliseconds,
-    );
+    try {
+      final items = library.map(_toMediaItem).toList();
+      await handler.setQueueFromTracks(
+        items,
+        startIndex: idx,
+        startPos: startPos,
+      );
+      await handler.setLoopOne(loopOne);
+
+      if (autoPlay) {
+        await handler.play();
+      } else {
+        await handler.pause();
+      }
+
+      await _savePlaybackNow(
+        isPlaying: autoPlay,
+        currentTrackId: trackId,
+        positionMs: (startPos ?? Duration.zero).inMilliseconds,
+      );
+    } catch (e) {
+      debugPrint('setCurrent error: $e');
+    }
 
     notifyListeners();
   }
@@ -1635,23 +1649,49 @@ class AppLogic extends ChangeNotifier {
     loopOne = s.loopOne;
     continuousPlay = s.continuous;
 
-    // Load the track reference but DON'T start playing
-    if (s.currentTrackId != null &&
-        library.any((t) => t.id == s.currentTrackId)) {
-      _current = library.firstWhere((t) => t.id == s.currentTrackId);
+    String? trackIdToLoad = s.currentTrackId;
 
-      // Set up the queue but don't play
+    // ✅ FIX: nếu saved track không còn trong library, fallback về first
+    if (trackIdToLoad != null && !library.any((t) => t.id == trackIdToLoad)) {
+      trackIdToLoad = null;
+    }
+
+    // ✅ FIX: fallback về library.first nếu không có saved track
+    if (trackIdToLoad == null && library.isNotEmpty) {
+      trackIdToLoad = library.first.id;
+    }
+
+    if (trackIdToLoad == null) {
+      notifyListeners();
+      return;
+    }
+
+    final idx = library.indexWhere((t) => t.id == trackIdToLoad);
+    if (idx < 0) {
+      notifyListeners();
+      return;
+    }
+
+    _current = library[idx];
+
+    // ✅ FIX: verify file exists
+    final file = File(_current!.localPath);
+    if (!await file.exists()) {
+      debugPrint('restore: file missing ${_current!.localPath}');
+      _current = null;
+      notifyListeners();
+      return;
+    }
+
+    try {
       final items = library.map(_toMediaItem).toList();
-      final idx = library.indexWhere((t) => t.id == s.currentTrackId);
-
-      if (idx >= 0) {
-        await handler.setQueueFromTracks(items, startIndex: idx);
-        await handler.setLoopOne(loopOne);
-        // Explicitly ensure we're paused
-        await handler.pause();
-      }
-    } else if (library.isNotEmpty) {
-      _current = library.first;
+      await handler.setQueueFromTracks(items, startIndex: idx);
+      await handler.setLoopOne(loopOne);
+      // ✅ CRITICAL: luôn pause sau restore, không tự phát
+      await handler.pause();
+    } catch (e) {
+      debugPrint('restore error: $e');
+      _current = null;
     }
 
     notifyListeners();
@@ -1725,6 +1765,14 @@ class AppLogic extends ChangeNotifier {
 
       for (final f in files) {
         if (f is File) {
+          // ✅ FIX 1: Bỏ qua các file .zip cũ trong rootDir (tránh zip chứa chính nó)
+          final ext = p.extension(f.path).toLowerCase();
+          if (ext == '.zip') continue;
+
+          // ✅ FIX 2: Bỏ qua restore lock nếu còn sót
+          final name = p.basename(f.path);
+          if (name == '.restore_lock') continue;
+
           final rel = p.relative(f.path, from: _rootDir.path);
           final bytes = await f.readAsBytes();
           archive.addFile(ArchiveFile(rel, bytes.length, bytes));
@@ -1734,8 +1782,12 @@ class AppLogic extends ChangeNotifier {
       final zipData = ZipEncoder().encode(archive);
       if (zipData == null) return 'Không thể tạo file zip';
 
+      // ✅ FIX 3: Lưu zip ra NGOÀI rootDir (temp rồi share, không lưu trong rootDir)
+      final tmpDir = await getTemporaryDirectory();
       final exportPath = p.join(
-          _rootDir.path, 'backup_${DateTime.now().millisecondsSinceEpoch}.zip');
+        tmpDir.path,
+        'backup_${DateTime.now().millisecondsSinceEpoch}.zip',
+      );
 
       await File(exportPath).writeAsBytes(zipData);
       return exportPath;
