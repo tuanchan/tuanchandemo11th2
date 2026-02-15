@@ -27,6 +27,7 @@ dependencies:
   # 🗜 ZIP (BACKUP)
   archive: ^3.4.10
 
+  share_plus: ^10.0.2
   # 💾 DB
   sqflite: ^2.4.1
   sqflite_common_ffi: ^2.3.2

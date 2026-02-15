@@ -5,7 +5,7 @@ import 'package:archive/archive.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
-
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
@@ -1491,8 +1491,16 @@ class _SettingsPageState extends State<_SettingsPage> {
                     final path = await widget.logic.exportLibraryToZip();
                     if (!context.mounted) return;
 
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(path ?? 'Lỗi')),
+                    if (path == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Backup lỗi')));
+                      return;
+                    }
+
+                    // 🔥 MỞ SHARE SHEET iOS (AirDrop, Files, Zalo, v.v.)
+                    await Share.shareXFiles(
+                      [XFile(path)],
+                      text: 'Backup thư viện nhạc',
                     );
                   },
                 ),
